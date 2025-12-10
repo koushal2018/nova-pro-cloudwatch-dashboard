@@ -1,0 +1,22 @@
+{
+  "enabled": true,
+  "name": "Security First CloudFormation",
+  "description": "Monitors CloudFormation template files to ensure security best practices: no embedded credentials, NoEcho for sensitive parameters, least privilege IAM roles, and proper service role usage",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.yaml",
+      "*.yml",
+      "*.json",
+      "*template*.yaml",
+      "*template*.yml",
+      "*template*.json",
+      "*.template"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review this CloudFormation template for security issues:\n1. Check for embedded credentials (passwords, API keys, secrets) - these should NEVER be hardcoded\n2. Verify sensitive parameters use NoEcho: true to prevent values from showing in console/CLI output\n3. Analyze IAM roles and policies for least privilege - ensure they only have permissions actually needed\n4. Check if service roles are properly separated from user permissions\n5. Suggest using IAM Access Analyzer to find unused permissions if applicable\n\nProvide specific findings and actionable recommendations to improve security."
+  }
+}

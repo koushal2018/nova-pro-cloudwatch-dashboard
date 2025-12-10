@@ -1,0 +1,26 @@
+{
+  "Statement": [
+    {
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "Update:Replace",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ResourceType": [
+            "AWS::CloudWatch::Dashboard",
+            "AWS::SNS::Topic",
+            "AWS::CloudWatch::Alarm",
+            "AWS::IAM::Role"
+          ]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "Update:*",
+      "Resource": "*"
+    }
+  ]
+}

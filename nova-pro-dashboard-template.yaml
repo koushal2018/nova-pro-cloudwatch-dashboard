@@ -1,0 +1,1620 @@
+
+
+# ============================================================================
+# Nova Pro CloudWatch Dashboard - CloudFormation Template
+# ============================================================================
+#
+# OVERVIEW:
+# This CloudFormation template creates a comprehensive monitoring solution for
+# Amazon Bedrock's Nova Pro Model. It provides enterprise-grade observability
+# through a pre-configured CloudWatch dashboard with real-time metrics, cost
+# tracking, performance monitoring, and operational alerting.
+#
+# FEATURES:
+# - Real-time usage metrics (invocations, TPM, token distribution)
+# - Cost tracking with cache efficiency analysis (December 2025 pricing)
+# - Performance monitoring (latency percentiles, error rates)
+# - Guardrail intervention tracking for content safety compliance
+# - Pre-configured CloudWatch alarms with SNS notifications
+# - Least-privilege IAM roles for secure dashboard access
+#
+# DEPLOYMENT INSTRUCTIONS:
+#
+# 1. Prerequisites:
+#    - AWS account with Amazon Bedrock access in target region
+#    - IAM permissions for CloudFormation, CloudWatch, SNS, IAM
+#    - Nova Pro model available in the monitoring region
+#
+# 2. Quick Deploy (AWS CLI):
+#    aws cloudformation create-stack \
+#      --stack-name nova-pro-dashboard \
+#      --template-body file://nova-pro-dashboard-template.yaml \
+#      --parameters ParameterKey=MonitoringRegion,ParameterValue=us-east-1 \
+#                   ParameterKey=AlarmEmail,ParameterValue=alerts@company.com \
+#      --capabilities CAPABILITY_NAMED_IAM \
+#      --enable-termination-protection
+#
+# 3. Production Deploy (with stack policy):
+#    aws cloudformation create-stack \
+#      --stack-name nova-pro-dashboard \
+#      --template-body file://nova-pro-dashboard-template.yaml \
+#      --parameters file://parameters.json \
+#      --capabilities CAPABILITY_NAMED_IAM \
+#      --stack-policy-body file://stack-policy.json \
+#      --enable-termination-protection \
+#      --rollback-configuration RollbackTriggers='[{Arn=arn:aws:cloudwatch:REGION:ACCOUNT:alarm:DASHBOARD-HighErrorRate,Type=AWS::CloudWatch::Alarm}]',MonitoringTimeInMinutes=5
+#
+# 4. Update Stack:
+#    aws cloudformation update-stack \
+#      --stack-name nova-pro-dashboard \
+#      --template-body file://nova-pro-dashboard-template.yaml \
+#      --parameters file://parameters.json \
+#      --capabilities CAPABILITY_NAMED_IAM
+#
+# COST CONSIDERATIONS:
+# - CloudWatch Dashboard: $3.00/month per dashboard
+# - CloudWatch Alarms: $0.10/month per standard alarm (4 alarms = $0.40/month)
+# - SNS Topic: $0.50 per 1 million requests (notifications only)
+# - Nova Pro Model Usage: See pricing in dashboard cost calculations
+# - Total Infrastructure Cost: ~$3.40/month (excluding model usage)
+#
+# SERVICE QUOTAS TO MONITOR:
+# - CloudWatch Dashboards: 500 per region (this template creates 1)
+# - CloudWatch Alarms: 10,000 per region (this template creates 4)
+# - SNS Topics: 100,000 per region (this template creates 0-1)
+# - IAM Roles: 1,000 per account (this template creates 1)
+# - IAM Managed Policies: 1,500 per account (this template creates 1)
+#
+# CUSTOMIZATION:
+# - Modify alarm thresholds via parameters
+# - Add custom metrics by extending dashboard JSON
+# - Adjust widget layouts by changing x,y coordinates
+# - Add additional notification channels via SNS subscriptions
+#
+# TROUBLESHOOTING:
+# - No data in widgets: Ensure Nova Pro model has been invoked in the region
+# - Missing guardrail data: Configure guardrails in Bedrock console
+# - Alarm false positives: Adjust thresholds or evaluation periods
+# - Cost discrepancies: Update pricing constants (see cost calculation comments)
+#
+# SECURITY NOTES:
+# - Uses least-privilege IAM policies scoped to Bedrock metrics
+# - SNS topic encrypted with AWS managed KMS key
+# - Dashboard requires IAM authentication (no public access)
+# - Use DashboardViewerRole for read-only access
+#
+# MAINTENANCE:
+# - Update pricing constants when Nova Pro pricing changes
+# - Review alarm thresholds quarterly based on usage patterns
+# - Monitor CloudWatch costs and optimize widget refresh rates if needed
+# - Enable drift detection to track configuration changes
+#
+# VERSION: 1.0.0 (December 2025)
+# PRICING UPDATE: December 2025 (Nova Pro pricing embedded in cost calculations)
+# ============================================================================
+
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: >
+  Nova Pro CloudWatch Dashboard - Comprehensive monitoring for Amazon Bedrock Nova Pro Model.
+  Provides real-time visibility into usage, TPM, costs, latency, errors, and guardrail interventions.
+  Includes pre-configured alarms for operational alerting. Version 1.0.0, December 2025.
+  
+  Stack Management: Deploy with stack policy, enable drift detection, configure rollback triggers.
+  Service Quotas: Creates 1 dashboard, 4 alarms, 0-1 SNS topics. Monitor quotas for production.
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: "Dashboard Configuration"
+        Parameters:
+          - DashboardName
+          - MonitoringRegion
+          - ModelId
+      
+      - Label:
+          default: "Alarm Thresholds"
+        Parameters:
+          - ErrorRateThreshold
+          - P99LatencyThreshold
+          - DailyCostThreshold
+          - ThrottleRateThreshold
+      
+      - Label:
+          default: "Notification Settings"
+        Parameters:
+          - AlarmEmail
+      
+      - Label:
+          default: "Resource Tagging"
+        Parameters:
+          - Environment
+          - Owner
+          - CostCenter
+    
+    ParameterLabels:
+      DashboardName:
+        default: "Dashboard Name"
+      MonitoringRegion:
+        default: "Monitoring Region"
+      ModelId:
+        default: "Model ID"
+      ErrorRateThreshold:
+        default: "Error Rate Threshold (%)"
+      P99LatencyThreshold:
+        default: "P99 Latency Threshold (ms)"
+      DailyCostThreshold:
+        default: "Daily Cost Threshold (USD)"
+      ThrottleRateThreshold:
+        default: "Throttle Rate Threshold (%)"
+      AlarmEmail:
+        default: "Alarm Email Address"
+      Environment:
+        default: "Environment"
+      Owner:
+        default: "Owner"
+      CostCenter:
+        default: "Cost Center"
+
+Parameters:
+  # Required Parameters
+  MonitoringRegion:
+    Type: String
+    Description: >
+      AWS region where Nova Pro Model metrics will be monitored. 
+      Only regions with Amazon Bedrock Nova Pro availability are listed.
+    AllowedValues:
+      - us-east-1
+      - us-west-2
+      - eu-west-1
+      - eu-central-1
+      - ap-southeast-1
+      - ap-northeast-1
+      - ca-central-1
+    ConstraintDescription: Must select a region where Amazon Bedrock Nova Pro is available
+  
+  ModelId:
+    Type: String
+    Description: >
+      Amazon Bedrock Nova Pro model identifier to monitor.
+      Default is the Nova Pro v1.0 model.
+    Default: amazon.nova-pro-v1:0
+    AllowedPattern: ^amazon\.nova-[a-z]+-v\d+:\d+$
+    ConstraintDescription: Must be a valid Nova model ID (e.g., amazon.nova-pro-v1:0)
+  
+  # Optional Parameters with Defaults
+  DashboardName:
+    Type: String
+    Description: Name for the CloudWatch dashboard
+    Default: NovaProMonitoring
+    MinLength: 1
+    MaxLength: 255
+    AllowedPattern: ^[\w\-]+$
+    ConstraintDescription: Must contain only alphanumeric characters, hyphens, and underscores
+  
+  ErrorRateThreshold:
+    Type: Number
+    Description: >
+      Percentage threshold for error rate alarm.
+      Alarm triggers when (ClientErrors + ServerErrors) / Invocations exceeds this value.
+    Default: 5
+    MinValue: 0
+    MaxValue: 100
+  
+  P99LatencyThreshold:
+    Type: Number
+    Description: >
+      Milliseconds threshold for P99 latency alarm.
+      Alarm triggers when 99th percentile latency exceeds this value.
+    Default: 5000
+    MinValue: 0
+  
+  DailyCostThreshold:
+    Type: Number
+    Description: >
+      USD threshold for daily cost alarm.
+      Alarm triggers when estimated daily cost exceeds this value.
+      Based on Nova Pro pricing as of December 2025.
+    Default: 1000
+    MinValue: 0
+  
+  ThrottleRateThreshold:
+    Type: Number
+    Description: >
+      Percentage threshold for throttling rate alarm.
+      Alarm triggers when throttle rate exceeds this value.
+    Default: 10
+    MinValue: 0
+    MaxValue: 100
+  
+  AlarmEmail:
+    Type: String
+    NoEcho: true
+    Description: >
+      Email address for alarm notifications (optional).
+      If provided, an SNS topic will be created and alarm notifications sent to this email.
+      Leave empty to skip SNS topic creation.
+    Default: ""
+    AllowedPattern: ^$|^[a-zA-Z0-9][a-zA-Z0-9._%+-]{0,63}@[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}\.[a-zA-Z]{2,6}$
+    ConstraintDescription: Must be a valid email address (user@domain.com) or empty string
+  
+  # Tagging Parameters for Resource Management
+  Environment:
+    Type: String
+    Description: Environment name for resource tagging (e.g., prod, staging, dev)
+    Default: prod
+    AllowedValues: [prod, staging, dev, test]
+  
+  Owner:
+    Type: String
+    Description: Team or individual responsible for this stack
+    Default: DevOps
+    MinLength: 1
+    MaxLength: 50
+  
+  CostCenter:
+    Type: String
+    Description: Cost center code for billing allocation
+    Default: AI-Operations
+    MinLength: 1
+    MaxLength: 50
+
+Conditions:
+  # Condition to check if AlarmEmail parameter is provided
+  HasAlarmEmail:
+    Fn::Not:
+      - Fn::Equals:
+          - Ref: AlarmEmail
+          - ""
+
+Resources:
+  # ========================================================================
+  # IAM Resources - Least-Privilege Security Model
+  # ========================================================================
+  #
+  # SECURITY DESIGN PRINCIPLES:
+  # - Least-privilege access: Only permissions required for dashboard viewing
+  # - Resource-scoped permissions: Limited to specific dashboard and Bedrock metrics
+  # - Conditional access: Region-scoped to prevent cross-region access
+  # - Separation of concerns: Separate policy and role for flexibility
+  #
+  # PERMISSION SCOPE:
+  # - CloudWatch: Dashboard access, Bedrock metrics only, specified region only
+  # - CloudWatch Logs: Bedrock model invocation logs only, specified region only  
+  # - Bedrock: Read-only model information, specified region only
+  # - No write permissions: Cannot modify dashboards, alarms, or configurations
+  #
+  # USAGE PATTERNS:
+  # - Assign DashboardViewerRole to users/groups needing dashboard access
+  # - Use for cross-account dashboard sharing (modify trust policy)
+  # - Integrate with identity providers via SAML/OIDC (modify trust policy)
+  #
+  # SECURITY CONSIDERATIONS:
+  # - Role assumes require explicit region matching
+  # - CloudWatch permissions scoped to Bedrock namespaces only
+  # - Log permissions scoped to Bedrock log groups only
+  # - No access to other AWS services or resources
+  #
+  # ========================================================================
+
+  # IAM Managed Policy for Dashboard Viewers (Read-Only Access)
+  DashboardViewerPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      ManagedPolicyName:
+        Fn::Sub: '${DashboardName}-ViewerPolicy'
+      Description: 'Least-privilege policy for Nova Pro dashboard viewing'
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # CloudWatch dashboard and metrics permissions - scoped to dashboard and Bedrock metrics
+          - Effect: Allow
+            Action:
+              - cloudwatch:GetDashboard
+              - cloudwatch:ListDashboards
+            Resource: 
+              - Fn::Sub: 'arn:${AWS::Partition}:cloudwatch:${MonitoringRegion}:${AWS::AccountId}:dashboard/${DashboardName}'
+              - Fn::Sub: 'arn:${AWS::Partition}:cloudwatch:${MonitoringRegion}:${AWS::AccountId}:dashboard/*'
+          # CloudWatch metrics permissions - scoped to Bedrock namespace only
+          - Effect: Allow
+            Action:
+              - cloudwatch:GetMetricData
+              - cloudwatch:GetMetricStatistics
+              - cloudwatch:ListMetrics
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'cloudwatch:namespace': 
+                  - 'AWS/Bedrock'
+                  - 'AWS/Bedrock/Guardrails'
+                'aws:RequestedRegion': !Ref MonitoringRegion
+          # CloudWatch Logs permissions for log insights widgets - scoped to Bedrock logs only
+          - Effect: Allow
+            Action:
+              - logs:StartQuery
+              - logs:GetQueryResults
+              - logs:DescribeLogGroups
+            Resource: 
+              - Fn::Sub: 'arn:${AWS::Partition}:logs:${MonitoringRegion}:${AWS::AccountId}:log-group:/aws/bedrock/modelinvocations*'
+            Condition:
+              StringEquals:
+                'aws:RequestedRegion': !Ref MonitoringRegion
+          # Bedrock read-only permissions for model information - minimal required permissions
+          - Effect: Allow
+            Action:
+              - bedrock:GetModelInvocationLoggingConfiguration
+              - bedrock:ListFoundationModels
+            Resource: '*'
+            Condition:
+              StringEquals:
+                'aws:RequestedRegion': !Ref MonitoringRegion
+
+  # IAM Role for Dashboard Viewers (Read-Only Access)
+  DashboardViewerRole:
+    Type: AWS::IAM::Role
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RoleName:
+        Fn::Sub: '${DashboardName}-ViewerRole'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                Fn::Sub: 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals:
+                'aws:RequestedRegion': !Ref MonitoringRegion
+      # Reference the managed policy for dashboard access
+      ManagedPolicyArns:
+        - !Ref DashboardViewerPolicy
+
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: Purpose
+          Value: NovaProMonitoring
+
+  # ========================================================================
+  # SNS Resources - Alarm Notification System
+  # ========================================================================
+  #
+  # NOTIFICATION DESIGN:
+  # - Conditional creation: Only created if AlarmEmail parameter provided
+  # - KMS encryption: Uses AWS managed key (alias/aws/sns) for security
+  # - Email subscription: Automatic subscription to provided email address
+  # - Extensible: Additional subscriptions can be added post-deployment
+  #
+  # OPERATIONAL CONSIDERATIONS:
+  # - Email confirmation required: Subscriber must confirm subscription
+  # - Delivery retries: SNS handles automatic retry logic
+  # - Dead letter queues: Consider adding for production environments
+  # - Message filtering: Can be added to reduce notification noise
+  #
+  # INTEGRATION OPTIONS:
+  # - PagerDuty: Add HTTPS subscription to PagerDuty integration URL
+  # - Slack: Use AWS Chatbot or Lambda function for Slack integration
+  # - Microsoft Teams: Use Logic Apps or Lambda function integration
+  # - Custom webhooks: Add HTTPS subscriptions to custom endpoints
+  #
+  # COST CONSIDERATIONS:
+  # - SNS requests: $0.50 per 1 million requests (alarm notifications only)
+  # - Email delivery: $2.00 per 100,000 emails (typically negligible)
+  # - SMS delivery: $0.75 per 100 SMS messages (if SMS subscriptions added)
+  #
+  # SECURITY FEATURES:
+  # - KMS encryption at rest and in transit
+  # - IAM-based access control for topic management
+  # - VPC endpoint support for private network access
+  #
+  # ========================================================================
+
+  # SNS Topic for Alarm Notifications
+  # Created only if AlarmEmail parameter is provided
+  AlarmTopic:
+    Type: AWS::SNS::Topic
+    Condition: HasAlarmEmail
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DisplayName: Nova Pro Model Alarms
+      TopicName:
+        Fn::Sub: '${DashboardName}-AlarmTopic'
+      # Enable KMS encryption for SNS topic to protect notification content
+      KmsMasterKeyId: alias/aws/sns
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: Purpose
+          Value: NovaProMonitoring
+        - Key: Component
+          Value: AlarmNotification
+  
+  # SNS Email Subscription
+  # Subscribes the provided email address to the alarm topic
+  AlarmSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlarmEmail
+    Properties:
+      Protocol: email
+      Endpoint:
+        Ref: AlarmEmail
+      TopicArn:
+        Ref: AlarmTopic
+  
+  # ========================================================================
+  # CloudWatch Dashboard - Main Monitoring Interface
+  # ========================================================================
+  #
+  # DASHBOARD LAYOUT (24-column grid system):
+  # 
+  # Row 1 (y:0-5): Usage Overview
+  #   - Total Invocations (24h) | Requests/Min (6h) | Service TPM (6h)
+  #   - Positions: x:0-7, x:8-15, x:16-23
+  #
+  # Row 2 (y:6-11): Customer TPM & Cost Tracking  
+  #   - Customer TPM (6h) | Daily Cost | Cost/Request (7d)
+  #   - Positions: x:0-7, x:8-15, x:16-23
+  #
+  # Row 3 (y:12-17): Cost Analysis & Performance
+  #   - Token Cost Breakdown (30d) | Cache Efficiency (7d) | Latency Percentiles (6h)
+  #   - Positions: x:0-7, x:8-15, x:16-23
+  #
+  # Row 4 (y:18-23): Latency Analysis & Error Monitoring
+  #   - Current/Previous Hour Latency | Latency by Size (24h) | Error Rate Gauge
+  #   - Positions: x:0-3, x:4-7, x:8-15, x:16-23
+  #
+  # Row 5 (y:24-29): Error Details & Success Metrics
+  #   - Error Breakdown (24h) | Recent Error Logs | Success vs Failed (24h)
+  #   - Positions: x:0-7, x:8-15, x:16-23
+  #
+  # Row 6 (y:30-35): Token Distribution & Concurrency
+  #   - Token Distribution (7d) | Concurrent Invocations (6h)
+  #   - Positions: x:0-11, x:12-23
+  #
+  # Row 7 (y:36-41): Guardrails Monitoring
+  #   - Total Interventions (24h) | Intervention Rate (7d) | Interventions by Type (24h)
+  #   - Positions: x:0-7, x:8-15, x:16-23
+  #
+  # COST CALCULATIONS (Nova Pro pricing as of December 2025):
+  # - Input tokens: $0.0008 per 1,000 tokens
+  # - Cache write tokens: $0.0008 per 1,000 tokens  
+  # - Cache read tokens: $0.00008 per 1,000 tokens (90% discount from input)
+  # - Output tokens: $0.0032 per 1,000 tokens (4x input token cost)
+  #
+  # TPM CALCULATIONS:
+  # - Service TPM (quota): (Input + CacheWrite + (Output × 5)) / period × 60
+  #   * Used by Bedrock service for quota enforcement
+  #   * Output tokens weighted 5x per service team calculation
+  # - Customer TPM (traditional): (Input + Output) / period × 60
+  #   * Traditional calculation for customer monitoring
+  #   * Simpler calculation for understanding consumption
+  #
+  NovaProDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      DashboardName:
+        Ref: DashboardName
+      DashboardBody:
+        Fn::Sub: |
+          {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Bedrock", "Invocations", "ModelId", "${ModelId}", {"stat": "Sum", "label": "Total Invocations"}]
+                ],
+                "view": "singleValue",
+                "region": "${MonitoringRegion}",
+                "title": "Total Invocations (24h)",
+                "period": 86400,
+                "stat": "Sum",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 0,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Bedrock", "Invocations", "ModelId", "${ModelId}", {"stat": "Sum", "label": "Requests/min"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${MonitoringRegion}",
+                "title": "Requests Per Minute",
+                "period": 60,
+                "stat": "Sum",
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Requests/min"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 0,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [{"expression": "(m1 + m2 + (m3 * 5)) / PERIOD(m1) * 60", "label": "Service TPM (Quota)", "id": "e1"}],
+                  ["AWS/Bedrock", "InputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m1", "visible": false}],
+                  [".", "CacheWriteInputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m2", "visible": false}],
+                  [".", "OutputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m3", "visible": false}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${MonitoringRegion}",
+                "title": "Service TPM (Quota Calculation)",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Tokens/min"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Note: Output tokens weighted 5x per Bedrock quota calculation",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [{"expression": "(m1 + m2) / PERIOD(m1) * 60", "label": "Customer TPM", "id": "e1"}],
+                  ["AWS/Bedrock", "InputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m1", "visible": false}],
+                  [".", "OutputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m2", "visible": false}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${MonitoringRegion}",
+                "title": "Customer TPM (Traditional Calculation)",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Tokens/min"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Traditional TPM for customer monitoring",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [{"expression": "(m1 * 0.0008/1000) + (m2 * 0.0008/1000) + (m3 * 0.00008/1000) + (m4 * 0.0032/1000)", "label": "Estimated Daily Cost (USD)", "id": "e1"}],
+                  ["AWS/Bedrock", "InputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m1", "visible": false}],
+                  [".", "CacheWriteInputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m2", "visible": false}],
+                  [".", "CacheReadInputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m3", "visible": false}],
+                  [".", "OutputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m4", "visible": false}]
+                ],
+                "view": "singleValue",
+                "region": "${MonitoringRegion}",
+                "title": "Estimated Daily Cost",
+                "period": 86400,
+                "stat": "Sum",
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "USD"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Pricing as of December 2025: Input $0.0008/1K, Cache Write $0.0008/1K, Cache Read $0.00008/1K, Output $0.0032/1K",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 6,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [{"expression": "((m1 * 0.0008/1000) + (m2 * 0.0008/1000) + (m3 * 0.00008/1000) + (m4 * 0.0032/1000)) / m5", "label": "Cost Per Request (USD)", "id": "e1"}],
+                  ["AWS/Bedrock", "InputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m1", "visible": false}],
+                  [".", "CacheWriteInputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m2", "visible": false}],
+                  [".", "CacheReadInputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m3", "visible": false}],
+                  [".", "OutputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m4", "visible": false}],
+                  [".", "Invocations", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m5", "visible": false}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${MonitoringRegion}",
+                "title": "Cost Per Request",
+                "period": 3600,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "USD per request"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 12,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [{"expression": "m1 * 0.0008/1000", "label": "Input Token Cost", "id": "e1"}],
+                  [{"expression": "m2 * 0.0008/1000", "label": "Cache Write Cost", "id": "e2"}],
+                  [{"expression": "m3 * 0.00008/1000", "label": "Cache Read Cost", "id": "e3"}],
+                  [{"expression": "m4 * 0.0032/1000", "label": "Output Token Cost", "id": "e4"}],
+                  ["AWS/Bedrock", "InputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m1", "visible": false}],
+                  [".", "CacheWriteInputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m2", "visible": false}],
+                  [".", "CacheReadInputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m3", "visible": false}],
+                  [".", "OutputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m4", "visible": false}]
+                ],
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "${MonitoringRegion}",
+                "title": "Token Cost Breakdown",
+                "period": 86400,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "USD"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Daily cost breakdown by token type - December 2025 pricing",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 12,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [{"expression": "m3 / (m1 + m2 + m3) * 100", "label": "Cache Hit Rate (%)", "id": "e1"}],
+                  ["AWS/Bedrock", "InputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m1", "visible": false}],
+                  [".", "CacheWriteInputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m2", "visible": false}],
+                  [".", "CacheReadInputTokenCount", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m3", "visible": false}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${MonitoringRegion}",
+                "title": "Cache Efficiency",
+                "period": 3600,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "max": 100,
+                    "label": "Cache Hit Rate (%)"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Higher percentage indicates better cache utilization and cost savings",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 12,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Bedrock", "InvocationLatency", "ModelId", "${ModelId}", {"stat": "p50", "label": "p50 Latency"}],
+                  [".", ".", ".", ".", {"stat": "p90", "label": "p90 Latency"}],
+                  [".", ".", ".", ".", {"stat": "p95", "label": "p95 Latency"}],
+                  [".", ".", ".", ".", {"stat": "p99", "label": "p99 Latency"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${MonitoringRegion}",
+                "title": "Latency Percentiles",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Milliseconds"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "p50, p90, p95, and p99 latency percentiles over 6 hours",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 18,
+              "width": 4,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Bedrock", "InvocationLatency", "ModelId", "${ModelId}", {"stat": "Average", "label": "Current Hour Avg"}]
+                ],
+                "view": "singleValue",
+                "region": "${MonitoringRegion}",
+                "title": "Current Hour Avg Latency",
+                "period": 3600,
+                "stat": "Average",
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "ms"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 4,
+              "y": 18,
+              "width": 4,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Bedrock", "InvocationLatency", "ModelId", "${ModelId}", {"stat": "Average", "label": "Previous Hour Avg"}]
+                ],
+                "view": "singleValue",
+                "region": "${MonitoringRegion}",
+                "title": "Previous Hour Avg Latency",
+                "period": 3600,
+                "stat": "Average",
+                "start": "-PT2H",
+                "end": "-PT1H",
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "ms"
+                  }
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 18,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Bedrock", "InvocationLatency", "ModelId", "${ModelId}", {"stat": "Average", "label": "Average Latency"}],
+                  [".", ".", ".", ".", {"stat": "p90", "label": "p90 Latency"}],
+                  ["AWS/Bedrock", "InputTokenCount", "ModelId", "${ModelId}", {"stat": "Average", "yAxis": "right", "label": "Avg Input Tokens"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${MonitoringRegion}",
+                "title": "Latency by Request Size",
+                "period": 3600,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Latency (ms)"
+                  },
+                  "right": {
+                    "min": 0,
+                    "label": "Input Tokens"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Correlation between input token count and latency - larger requests typically have higher latency",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 18,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [{"expression": "(m1 + m2) / m3 * 100", "label": "Error Rate (%)", "id": "e1"}],
+                  ["AWS/Bedrock", "InvocationClientErrors", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m1", "visible": false}],
+                  [".", "InvocationServerErrors", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m2", "visible": false}],
+                  [".", "Invocations", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m3", "visible": false}]
+                ],
+                "view": "gauge",
+                "region": "${MonitoringRegion}",
+                "title": "Error Rate",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "max": 100
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Warning",
+                      "value": ${ErrorRateThreshold},
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 24,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Bedrock", "InvocationClientErrors", "ModelId", "${ModelId}", {"stat": "Sum", "label": "Client Errors"}],
+                  [".", "InvocationServerErrors", "ModelId", "${ModelId}", {"stat": "Sum", "label": "Server Errors"}],
+                  [".", "InvocationThrottles", "ModelId", "${ModelId}", {"stat": "Sum", "label": "Throttles"}]
+                ],
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "${MonitoringRegion}",
+                "title": "Error Breakdown",
+                "period": 3600,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Error Count"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Client Errors: 4xx responses, Server Errors: 5xx responses, Throttles: Rate limiting",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "log",
+              "x": 8,
+              "y": 24,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/bedrock/modelinvocations'\n| fields @timestamp, @message, @logStream\n| filter @message like /ERROR/ or @message like /FAILED/ or @message like /Exception/\n| sort @timestamp desc\n| limit 50",
+                "region": "${MonitoringRegion}",
+                "title": "Recent Errors",
+                "view": "table",
+                "stacked": false,
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Note: Requires model invocation logging to be enabled in Bedrock. Configure logging in Bedrock console under Model invocation logging.",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 24,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [{"expression": "m3 - m1 - m2", "label": "Successful Invocations", "id": "e1"}],
+                  [{"expression": "m1 + m2", "label": "Failed Invocations", "id": "e2"}],
+                  ["AWS/Bedrock", "InvocationClientErrors", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m1", "visible": false}],
+                  [".", "InvocationServerErrors", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m2", "visible": false}],
+                  [".", "Invocations", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m3", "visible": false}]
+                ],
+                "view": "pie",
+                "region": "${MonitoringRegion}",
+                "title": "Success vs Failed Invocations",
+                "period": 86400,
+                "stat": "Sum",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "24-hour view of successful invocations vs client/server errors",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 30,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Bedrock", "InputTokenCount", "ModelId", "${ModelId}", {"stat": "Average", "label": "Input Token Count"}],
+                  [".", "OutputTokenCount", "ModelId", "${ModelId}", {"stat": "Average", "label": "Output Token Count"}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${MonitoringRegion}",
+                "title": "Token Distribution - Input vs Output",
+                "period": 3600,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Token Count"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Distribution of input and output token counts over 7 days - shows request size patterns",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 12,
+              "y": 30,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [{"expression": "m1 * m2 / 1000", "label": "Estimated Concurrent Invocations", "id": "e1"}],
+                  ["AWS/Bedrock", "Invocations", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m1", "visible": false}],
+                  [".", "InvocationLatency", "ModelId", "${ModelId}", {"stat": "Average", "id": "m2", "visible": false}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${MonitoringRegion}",
+                "title": "Concurrent Invocations",
+                "period": 300,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Concurrent Invocations"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Estimated concurrent invocations based on request rate and average latency over 6 hours",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 36,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Bedrock/Guardrails", "InvocationsIntervened", {"stat": "Sum", "label": "Total Interventions"}]
+                ],
+                "view": "singleValue",
+                "region": "${MonitoringRegion}",
+                "title": "Guardrail Interventions (24h)",
+                "period": 86400,
+                "stat": "Sum",
+                "yAxis": {
+                  "left": {
+                    "min": 0
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Total number of guardrail interventions in the last 24 hours",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 8,
+              "y": 36,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [{"expression": "m1 / m2 * 100", "label": "Intervention Rate (%)", "id": "e1"}],
+                  ["AWS/Bedrock/Guardrails", "InvocationsIntervened", {"stat": "Sum", "id": "m1", "visible": false}],
+                  ["AWS/Bedrock", "Invocations", "ModelId", "${ModelId}", {"stat": "Sum", "id": "m2", "visible": false}]
+                ],
+                "view": "timeSeries",
+                "stacked": false,
+                "region": "${MonitoringRegion}",
+                "title": "Intervention Rate",
+                "period": 3600,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "max": 100,
+                    "label": "Intervention Rate (%)"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Percentage of requests that triggered guardrail interventions over 7 days",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            },
+            {
+              "type": "metric",
+              "x": 16,
+              "y": 36,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  ["AWS/Bedrock/Guardrails", "FindingCounts", "GuardrailPolicyType", "CONTENT_POLICY", {"stat": "Sum", "label": "Content Policy"}],
+                  [".", ".", ".", "SENSITIVE_INFORMATION_POLICY", {"stat": "Sum", "label": "Sensitive Info Policy"}],
+                  [".", ".", ".", "DENIED_TOPICS_POLICY", {"stat": "Sum", "label": "Denied Topics Policy"}],
+                  [".", ".", ".", "WORD_POLICY", {"stat": "Sum", "label": "Word Policy"}]
+                ],
+                "view": "timeSeries",
+                "stacked": true,
+                "region": "${MonitoringRegion}",
+                "title": "Interventions by Type",
+                "period": 86400,
+                "yAxis": {
+                  "left": {
+                    "min": 0,
+                    "label": "Finding Count"
+                  }
+                },
+                "annotations": {
+                  "horizontal": [
+                    {
+                      "label": "Breakdown of guardrail interventions by policy type over 24 hours",
+                      "value": 0,
+                      "fill": "above"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+          }
+
+  # ========================================================================
+  # CloudWatch Alarms - Operational Alerting
+  # ========================================================================
+  #
+  # ALARM CONFIGURATION STRATEGY:
+  # - Use "M out of N" evaluation periods to reduce false positives
+  # - TreatMissingData: notBreaching (don't alarm on missing metrics)
+  # - InsufficientDataActions: [] (don't alarm on insufficient data)
+  # - Conditional SNS integration (only if AlarmEmail provided)
+  #
+  # ALARM THRESHOLDS (configurable via parameters):
+  # - Error Rate: Default 5% (2 out of 2 periods of 5 minutes)
+  # - P99 Latency: Default 5000ms (3 out of 3 periods of 5 minutes)  
+  # - Daily Cost: Default $1000 (1 period of 24 hours)
+  # - Throttling Rate: Default 10% (2 out of 2 periods of 5 minutes)
+  #
+  # NOTIFICATION STRATEGY:
+  # - Email notifications via SNS (if AlarmEmail parameter provided)
+  # - Alarm state changes tracked for operational visibility
+  # - Consider integrating with PagerDuty, Slack, or other tools via SNS
+  #
+  # COST IMPACT:
+  # - Standard alarms: $0.10/month each (4 alarms = $0.40/month)
+  # - High-resolution alarms: $0.30/month each (not used in this template)
+  #
+  # ========================================================================
+  
+  # High Error Rate Alarm - triggers when error rate exceeds threshold
+  HighErrorRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    DependsOn: NovaProDashboard
+    Metadata:
+      OperationalNotes: |
+        CRITICAL ALARM: This alarm serves as a rollback trigger for stack updates.
+        Deletion or modification requires careful consideration of operational impact.
+        Consider creating a change management process for alarm threshold updates.
+    Properties:
+      AlarmName:
+        Fn::Sub: '${DashboardName}-HighErrorRate'
+      AlarmDescription: 'Nova Pro model error rate is above threshold'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: Purpose
+          Value: NovaProMonitoring
+        - Key: AlarmType
+          Value: ErrorRate
+      EvaluationPeriods: 2
+      Threshold:
+        Ref: ErrorRateThreshold
+      ComparisonOperator: GreaterThanThreshold
+      # Calculate error rate as percentage using metrics math
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              MetricName: InvocationClientErrors
+              Namespace: AWS/Bedrock
+              Dimensions:
+                - Name: ModelId
+                  Value:
+                    Ref: ModelId
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              MetricName: InvocationServerErrors
+              Namespace: AWS/Bedrock
+              Dimensions:
+                - Name: ModelId
+                  Value:
+                    Ref: ModelId
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+        - Id: m3
+          MetricStat:
+            Metric:
+              MetricName: Invocations
+              Namespace: AWS/Bedrock
+              Dimensions:
+                - Name: ModelId
+                  Value:
+                    Ref: ModelId
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+        - Id: e1
+          Expression: '(m1 + m2) / m3 * 100'
+          Label: 'Error Rate (%)'
+          ReturnData: true
+      AlarmActions:
+        Fn::If:
+          - HasAlarmEmail
+          - - Ref: AlarmTopic
+          - []
+      TreatMissingData: notBreaching
+      # Enable alarm state change tracking for operational visibility
+      ActionsEnabled: true
+      # Insufficient data actions - don't alarm on missing data
+      InsufficientDataActions: []
+
+  # High P99 Latency Alarm - triggers when P99 latency exceeds threshold
+  HighP99LatencyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    DependsOn: NovaProDashboard
+    Properties:
+      AlarmName:
+        Fn::Sub: '${DashboardName}-HighP99Latency'
+      AlarmDescription: 'Nova Pro model P99 latency is above threshold'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: Purpose
+          Value: NovaProMonitoring
+        - Key: AlarmType
+          Value: Latency
+      MetricName: InvocationLatency
+      Namespace: AWS/Bedrock
+      ExtendedStatistic: 'p99'
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold:
+        Ref: P99LatencyThreshold
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: ModelId
+          Value:
+            Ref: ModelId
+      AlarmActions:
+        Fn::If:
+          - HasAlarmEmail
+          - - Ref: AlarmTopic
+          - []
+      TreatMissingData: notBreaching
+      InsufficientDataActions: []
+
+  # Daily Cost Limit Alarm - triggers when estimated daily cost exceeds threshold
+  DailyCostLimitAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    DependsOn: NovaProDashboard
+    Properties:
+      AlarmName:
+        Fn::Sub: '${DashboardName}-DailyCostLimit'
+      AlarmDescription: 'Nova Pro model daily cost is above threshold'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: Purpose
+          Value: NovaProMonitoring
+        - Key: AlarmType
+          Value: Cost
+      # Use calculated metric for daily cost
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              MetricName: InputTokenCount
+              Namespace: AWS/Bedrock
+              Dimensions:
+                - Name: ModelId
+                  Value:
+                    Ref: ModelId
+            Period: 86400
+            Stat: Sum
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              MetricName: CacheWriteInputTokenCount
+              Namespace: AWS/Bedrock
+              Dimensions:
+                - Name: ModelId
+                  Value:
+                    Ref: ModelId
+            Period: 86400
+            Stat: Sum
+          ReturnData: false
+        - Id: m3
+          MetricStat:
+            Metric:
+              MetricName: CacheReadInputTokenCount
+              Namespace: AWS/Bedrock
+              Dimensions:
+                - Name: ModelId
+                  Value:
+                    Ref: ModelId
+            Period: 86400
+            Stat: Sum
+          ReturnData: false
+        - Id: m4
+          MetricStat:
+            Metric:
+              MetricName: OutputTokenCount
+              Namespace: AWS/Bedrock
+              Dimensions:
+                - Name: ModelId
+                  Value:
+                    Ref: ModelId
+            Period: 86400
+            Stat: Sum
+          ReturnData: false
+        - Id: e1
+          Expression: '(m1 * 0.0008/1000) + (m2 * 0.0008/1000) + (m3 * 0.00008/1000) + (m4 * 0.0032/1000)'
+          Label: 'Daily Cost (USD)'
+          ReturnData: true
+      EvaluationPeriods: 1
+      Threshold:
+        Ref: DailyCostThreshold
+      ComparisonOperator: GreaterThanThreshold
+      AlarmActions:
+        Fn::If:
+          - HasAlarmEmail
+          - - Ref: AlarmTopic
+          - []
+      TreatMissingData: notBreaching
+      InsufficientDataActions: []
+
+  # High Throttling Rate Alarm - triggers when throttling rate exceeds threshold
+  HighThrottlingRateAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    DependsOn: NovaProDashboard
+    Properties:
+      AlarmName:
+        Fn::Sub: '${DashboardName}-HighThrottlingRate'
+      AlarmDescription: 'Nova Pro model throttling rate is above threshold'
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: CostCenter
+          Value: !Ref CostCenter
+        - Key: Purpose
+          Value: NovaProMonitoring
+        - Key: AlarmType
+          Value: Throttling
+      EvaluationPeriods: 2
+      Threshold:
+        Ref: ThrottleRateThreshold
+      ComparisonOperator: GreaterThanThreshold
+      # Calculate throttling rate as percentage using metrics math
+      Metrics:
+        - Id: m1
+          MetricStat:
+            Metric:
+              MetricName: InvocationThrottles
+              Namespace: AWS/Bedrock
+              Dimensions:
+                - Name: ModelId
+                  Value:
+                    Ref: ModelId
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+        - Id: m2
+          MetricStat:
+            Metric:
+              MetricName: Invocations
+              Namespace: AWS/Bedrock
+              Dimensions:
+                - Name: ModelId
+                  Value:
+                    Ref: ModelId
+            Period: 300
+            Stat: Sum
+          ReturnData: false
+        - Id: e1
+          Expression: 'm1 / m2 * 100'
+          Label: 'Throttling Rate (%)'
+          ReturnData: true
+      AlarmActions:
+        Fn::If:
+          - HasAlarmEmail
+          - - Ref: AlarmTopic
+          - []
+      TreatMissingData: notBreaching
+      InsufficientDataActions: []
+
+# ============================================================================
+# Stack Outputs - Integration Points and Operational Information
+# ============================================================================
+#
+# OUTPUT USAGE:
+# - DashboardURL: Direct link to dashboard (bookmark for quick access)
+# - DashboardName: Reference for API calls and automation scripts
+# - AlarmTopicArn: SNS topic ARN for additional subscriptions
+# - DashboardViewerRoleArn: IAM role for cross-account or federated access
+# - StackManagementCommands: Copy-paste commands for stack operations
+# - SecurityRecommendations: Security checklist for production deployment
+# - ProductionDeploymentNotes: Operational considerations for production
+#
+# CROSS-STACK REFERENCES:
+# All outputs are exported with stack name prefix for cross-stack imports:
+# - !ImportValue StackName-DashboardURL
+# - !ImportValue StackName-DashboardName  
+# - !ImportValue StackName-AlarmTopicArn
+# - !ImportValue StackName-ViewerRoleArn
+#
+# AUTOMATION INTEGRATION:
+# Use outputs in CI/CD pipelines, monitoring scripts, and operational runbooks.
+# Example: Retrieve dashboard URL programmatically for embedding in portals.
+#
+# ============================================================================
+
+Outputs:
+  DashboardURL:
+    Description: >
+      Direct URL to access the Nova Pro CloudWatch Dashboard.
+      Bookmark this URL for quick access to monitoring data.
+      URL format: https://REGION.console.aws.amazon.com/cloudwatch/home?region=REGION#dashboards:name=DASHBOARD_NAME
+    Value:
+      Fn::Sub: 'https://${MonitoringRegion}.console.aws.amazon.com/cloudwatch/home?region=${MonitoringRegion}#dashboards:name=${DashboardName}'
+    Export:
+      Name:
+        Fn::Sub: '${AWS::StackName}-DashboardURL'
+  
+  DashboardName:
+    Description: >
+      Name of the created CloudWatch Dashboard.
+      Use this name for API calls, automation scripts, and cross-stack references.
+      Example usage: aws cloudwatch get-dashboard --dashboard-name VALUE
+    Value:
+      Ref: DashboardName
+    Export:
+      Name:
+        Fn::Sub: '${AWS::StackName}-DashboardName'
+  
+  AlarmTopicArn:
+    Condition: HasAlarmEmail
+    Description: >
+      ARN of the SNS topic for alarm notifications.
+      Use this ARN to add additional subscriptions (Slack, PagerDuty, webhooks).
+      Example: aws sns subscribe --topic-arn VALUE --protocol https --notification-endpoint https://hooks.slack.com/...
+    Value:
+      Ref: AlarmTopic
+    Export:
+      Name:
+        Fn::Sub: '${AWS::StackName}-AlarmTopicArn'
+  
+  StackManagementCommands:
+    Description: Commands for stack management and drift detection
+    Value:
+      Fn::Sub: |
+        # Drift Detection
+        aws cloudformation detect-stack-drift --stack-name ${AWS::StackName} --region ${MonitoringRegion}
+        
+        # Get Drift Status
+        aws cloudformation describe-stack-drift-detection-status --stack-drift-detection-id <detection-id> --region ${MonitoringRegion}
+        
+        # Stack Policy (apply during deployment)
+        aws cloudformation set-stack-policy --stack-name ${AWS::StackName} --stack-policy-body file://stack-policy.json --region ${MonitoringRegion}
+        
+        # Rollback Configuration (recommended for production)
+        aws cloudformation create-stack --stack-name ${AWS::StackName} \
+          --template-body file://nova-pro-dashboard-template.yaml \
+          --rollback-configuration RollbackTriggers='[{Arn=arn:aws:cloudwatch:${MonitoringRegion}:${AWS::AccountId}:alarm:${DashboardName}-HighErrorRate,Type=AWS::CloudWatch::Alarm},{Arn=arn:aws:cloudwatch:${MonitoringRegion}:${AWS::AccountId}:alarm:${DashboardName}-HighP99Latency,Type=AWS::CloudWatch::Alarm}]',MonitoringTimeInMinutes=5 \
+          --enable-termination-protection \
+          --region ${MonitoringRegion}
+        
+        # Enable Termination Protection (for existing stacks)
+        aws cloudformation update-termination-protection --stack-name ${AWS::StackName} --enable-termination-protection --region ${MonitoringRegion}
+  
+  DashboardViewerRoleArn:
+    Description: >
+      ARN of the IAM role for dashboard viewers (read-only access).
+      Assign this role to users/groups needing dashboard access.
+      For cross-account access, modify the trust policy to include external account principals.
+      Example: aws sts assume-role --role-arn VALUE --role-session-name DashboardViewer
+    Value:
+      Fn::GetAtt: DashboardViewerRole.Arn
+    Export:
+      Name:
+        Fn::Sub: '${AWS::StackName}-ViewerRoleArn'
+  
+  SecurityRecommendations:
+    Description: Security best practices for this monitoring stack
+    Value: |
+      SECURITY CHECKLIST:
+      1. Use the DashboardViewerRole for read-only dashboard access
+      2. Regularly rotate SNS topic access if using programmatic access
+      3. Monitor CloudTrail for unauthorized dashboard modifications
+      4. Enable AWS Config to track resource configuration changes
+      5. Use AWS IAM Access Analyzer to identify unused permissions
+      6. Consider VPC endpoints for CloudWatch API calls in private subnets
+      7. Enable GuardDuty for anomaly detection on AWS API usage
+  
+  ProductionDeploymentNotes:
+    Description: Important considerations for production deployment
+    Value: |
+      PRODUCTION CHECKLIST:
+      1. Apply stack policy before deployment to prevent accidental resource replacement
+      2. Configure rollback triggers using the HighErrorRateAlarm as a canary
+      3. Test alarm notifications in non-production environment first
+      4. Monitor CloudWatch costs - dashboards cost $3/month, alarms $0.10/month each
+      5. Verify Bedrock model invocation logging is enabled for error log analysis
+      6. Use the DashboardViewerRole for least-privilege dashboard access
+      
+      BACKUP AND RECOVERY:
+      7. Export dashboard configuration: aws cloudwatch get-dashboard --dashboard-name VALUE
+      8. Backup alarm configurations: aws cloudwatch describe-alarms --alarm-names VALUE
+      9. Document custom threshold values for disaster recovery scenarios
+      10. Test stack recreation in non-production environment quarterly
+      
+      MONITORING AND MAINTENANCE:
+      11. Enable AWS Config to track configuration drift
+      12. Set up CloudTrail monitoring for unauthorized stack modifications
+      13. Review service quotas quarterly (dashboards: 500/region, alarms: 10,000/region)
+      14. Update Nova Pro pricing constants when AWS announces price changes

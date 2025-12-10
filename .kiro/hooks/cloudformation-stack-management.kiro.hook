@@ -1,0 +1,24 @@
+{
+  "enabled": true,
+  "name": "CloudFormation Stack Management",
+  "description": "Monitors CloudFormation template files and ensures stack policies protect critical resources, rollback triggers are configured, drift detection is used, and proper tagging is applied for cost allocation, ownership, and environment identification",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.yaml",
+      "*.yml",
+      "*.json",
+      "*template*.yaml",
+      "*template*.yml",
+      "*cloudformation*.yaml",
+      "*cloudformation*.yml",
+      "*cfn*.yaml",
+      "*cfn*.yml"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review the CloudFormation template changes and ensure:\n1. Stack policies are defined to protect critical resources (e.g., databases) from replacement with Effect: Deny on Update:Replace actions\n2. Rollback triggers are configured for automatic recovery on failure\n3. Drift detection commands are documented or referenced for out-of-band change monitoring\n4. Comprehensive tagging is applied including Environment, Owner, and CostCenter tags for proper resource management\n5. All resources follow AWS CloudFormation best practices for stack management\n\nProvide specific recommendations for any missing elements."
+  }
+}

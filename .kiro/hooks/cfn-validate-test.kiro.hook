@@ -1,0 +1,20 @@
+{
+  "enabled": true,
+  "name": "CloudFormation Validation & Testing",
+  "description": "Automatically validates CloudFormation templates using syntax check, cfn-lint, and cfn-guard when template files are edited. Also prompts to create change sets before updating stacks.",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "*.yaml",
+      "*.yml",
+      "*.json",
+      "template.yaml",
+      "template.yml"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A CloudFormation template file has been modified. Please perform the following validation steps:\n\n1. Run syntax validation: `aws cloudformation validate-template --template-body file://[filename]`\n2. Run cfn-lint for best practices: `cfn-lint [filename]`\n3. Run cfn-guard for policy-as-code validation: `cfn-guard validate -d [filename] -r rules.guard`\n\nIf this is an update to an existing stack, remind the user to:\n- Create a change set to preview changes: `aws cloudformation create-change-set --stack-name [StackName] --template-body file://[filename] --change-set-name [ChangeSetName]`\n- Review the change set before executing: `aws cloudformation execute-change-set --change-set-name [ChangeSetName] --stack-name [StackName]`\n\nReport the validation results and any issues found."
+  }
+}

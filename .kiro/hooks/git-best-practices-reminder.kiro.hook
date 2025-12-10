@@ -1,0 +1,16 @@
+{
+  "enabled": true,
+  "name": "Git Best Practices Reminder",
+  "description": "Reviews recent file changes and provides friendly reminders about Git best practices including branch verification, commit guidelines, Jira references, regular pushes, code review suggestions, and deployment communication",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/*"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review the recent file changes and provide a friendly reminder about Git best practices:\n\n1. Verify the developer is on a feature branch (not main/dev/develop)\n2. Remind them to make small, focused commits with clear messages\n3. Suggest including Jira story/task numbers in commit messages if applicable\n4. Encourage pushing code regularly to avoid losing work\n5. If significant changes are detected, remind about creating merge requests and assigning experienced developers for code review\n6. If changes affect deployment (terraform, lambda, infrastructure), remind to communicate in team Slack channel\n\nKeep the reminder concise, helpful, and non-intrusive. Focus on the most relevant practices based on the type of files changed."
+  }
+}
