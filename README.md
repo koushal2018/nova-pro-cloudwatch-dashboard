@@ -92,12 +92,114 @@ cfn-lint nova-pro-dashboard-template.yaml
 aws cloudformation validate-template --template-body file://nova-pro-dashboard-template.yaml
 ```
 
+## 🔐 Security Validation
+
+Run security validation tests to verify hardening measures:
+
+```bash
+# Run comprehensive security validation
+python -c "
+from test_template_properties import *
+test_iam_trust_policy_restrictions()
+test_cloudwatch_permission_region_scoping()
+test_logs_permission_model_scoping()
+test_resource_protection_policies()
+test_sns_topic_access_policy()
+print('All security validations passed!')
+"
+
+# Validate IAM policies with AWS IAM Policy Simulator
+aws iam simulate-principal-policy \
+  --policy-source-arn arn:aws:iam::ACCOUNT:role/DASHBOARD-ViewerRole \
+  --action-names cloudwatch:GetDashboard \
+  --resource-arns arn:aws:cloudwatch:REGION:ACCOUNT:dashboard/DASHBOARD
+
+# Check for security findings with AWS Config (if enabled)
+aws configservice get-compliance-details-by-config-rule \
+  --config-rule-name iam-role-managed-policy-check
+
+# Scan for security issues with AWS Security Hub (if enabled)
+aws securityhub get-findings \
+  --filters '{"ResourceId":[{"Value":"STACK-NAME","Comparison":"EQUALS"}]}'
+```
+
+## 🚨 Incident Response
+
+### Security Event Detection
+
+Monitor for these security events:
+
+```bash
+# CloudTrail: Unusual IAM role assumptions
+aws logs filter-log-events \
+  --log-group-name CloudTrail/SecurityEvents \
+  --filter-pattern '{ $.eventName = "AssumeRole" && $.sourceIPAddress != "EXPECTED_IP" }'
+
+# CloudWatch: Suspicious metric access patterns
+aws logs filter-log-events \
+  --log-group-name /aws/cloudwatch/api \
+  --filter-pattern '{ $.eventName = "GetMetricData" && $.errorCode exists }'
+
+# Config: Unauthorized resource changes
+aws configservice get-compliance-details-by-config-rule \
+  --config-rule-name cloudformation-stack-drift-detection-check
+```
+
+### Emergency Response Actions
+
+If security breach detected:
+
+```bash
+# 1. Immediately disable the IAM role
+aws iam attach-role-policy \
+  --role-name DASHBOARD-ViewerRole \
+  --policy-arn arn:aws:iam::aws:policy/AWSDenyAll
+
+# 2. Isolate SNS topic (if compromised)
+aws sns set-topic-attributes \
+  --topic-arn arn:aws:sns:REGION:ACCOUNT:TOPIC \
+  --attribute-name Policy \
+  --attribute-value '{"Statement":[{"Effect":"Deny","Principal":"*","Action":"*"}]}'
+
+# 3. Enable detailed CloudTrail logging
+aws cloudtrail put-event-selectors \
+  --trail-name SecurityAuditTrail \
+  --event-selectors ReadWriteType=All,IncludeManagementEvents=true
+
+# 4. Create security incident ticket
+echo "Security incident detected at $(date)" > incident-$(date +%Y%m%d-%H%M%S).log
+```
+
+### Recovery Procedures
+
+After incident resolution:
+
+```bash
+# 1. Restore IAM role with updated trust policy
+aws iam detach-role-policy \
+  --role-name DASHBOARD-ViewerRole \
+  --policy-arn arn:aws:iam::aws:policy/AWSDenyAll
+
+# 2. Update stack with enhanced security
+aws cloudformation update-stack \
+  --stack-name nova-pro-dashboard \
+  --template-body file://nova-pro-dashboard-template.yaml \
+  --capabilities CAPABILITY_NAMED_IAM
+
+# 3. Verify security controls
+python -c "from test_template_properties import *; test_security_validation_property_based()"
+
+# 4. Document lessons learned
+echo "Incident resolved. Updated security controls verified." >> incident-$(date +%Y%m%d-%H%M%S).log
+```
+
 ## 📚 Documentation
 
 - [Deployment Guide](DEPLOYMENT.md) - Production deployment checklist and security hardening
 - [Design Document](.kiro/specs/nova-cloudwatch-dashboard/design.md) - Architecture and technical design
 - [Requirements](.kiro/specs/nova-cloudwatch-dashboard/requirements.md) - User stories and acceptance criteria
 - [Implementation Tasks](.kiro/specs/nova-cloudwatch-dashboard/tasks.md) - Development checklist
+- [Security Architecture](.kiro/specs/nova-cloudwatch-dashboard/design.md#security-considerations) - Security controls and incident response
 
 ## 🤝 Contributing
 
@@ -121,6 +223,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Create an [Issue](../../issues) for bug reports or feature requests
 - Check [Deployment Guide](DEPLOYMENT.md) for troubleshooting
 - Review [Security Recommendations](DEPLOYMENT.md#security-best-practices) for production deployment
+- For security incidents, follow [Incident Response](#-incident-response) procedures
+- Run [Security Validation](#-security-validation) tests before production deployment
 
 ---
 

@@ -1288,6 +1288,204 @@ def test_update_safe_resource_configuration_property_based(data):
     )
 
 
+def test_iam_trust_policy_restrictions():
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 8: IAM trust policy restrictions**
+    **Validates: Requirements 9.1 - Security hardening**
+    
+    Property: IAM trust policies should not allow overly permissive principals
+    and should include security conditions like ExternalId and region scoping.
+    """
+    import yaml
+    
+    with open('nova-pro-dashboard-template.yaml', 'r') as f:
+        content = f.read()
+    
+    # Check that the trust policy doesn't use account root as principal
+    assert 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root' not in content, (
+        "IAM trust policy should not use account root principal for security"
+    )
+    
+    # Check for specific user/role principals instead
+    assert 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/dashboard-admin' in content, (
+        "IAM trust policy should specify specific users instead of account root"
+    )
+    
+    # Check for ExternalId condition
+    assert 'sts:ExternalId' in content, (
+        "IAM trust policy should include ExternalId condition for cross-account security"
+    )
+    
+    # Check for region scoping in trust policy
+    assert 'aws:RequestedRegion' in content, (
+        "IAM trust policy should include region scoping conditions"
+    )
+
+
+def test_cloudwatch_permission_region_scoping():
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 9: CloudWatch permission region scoping**
+    **Validates: Requirements 9.2 - Security hardening**
+    
+    Property: All CloudWatch permissions should include region scoping conditions
+    to prevent cross-region access.
+    """
+    import yaml
+    
+    with open('nova-pro-dashboard-template.yaml', 'r') as f:
+        content = f.read()
+    
+    # Find CloudWatch permission statements
+    cloudwatch_actions = [
+        'cloudwatch:GetDashboard',
+        'cloudwatch:ListDashboards', 
+        'cloudwatch:GetMetricData',
+        'cloudwatch:GetMetricStatistics',
+        'cloudwatch:ListMetrics'
+    ]
+    
+    for action in cloudwatch_actions:
+        if action in content:
+            # Find the section containing this action
+            lines = content.split('\n')
+            action_found = False
+            region_condition_found = False
+            
+            for i, line in enumerate(lines):
+                if action in line:
+                    action_found = True
+                    # Look for aws:RequestedRegion condition in the next 20 lines
+                    for j in range(i, min(i + 20, len(lines))):
+                        if 'aws:RequestedRegion' in lines[j]:
+                            region_condition_found = True
+                            break
+                    break
+            
+            if action_found:
+                assert region_condition_found, (
+                    f"CloudWatch action '{action}' should have aws:RequestedRegion condition for security"
+                )
+
+
+def test_logs_permission_model_scoping():
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 10: Logs permission model scoping**
+    **Validates: Requirements 9.2 - Security hardening**
+    
+    Property: CloudWatch Logs permissions should be scoped to specific model logs
+    to prevent access to other models' logs.
+    """
+    import yaml
+    
+    with open('nova-pro-dashboard-template.yaml', 'r') as f:
+        content = f.read()
+    
+    # Check that logs permissions are scoped to specific model
+    assert '/aws/bedrock/modelinvocations/${ModelId}' in content, (
+        "Logs permissions should be scoped to specific model logs using ModelId parameter"
+    )
+    
+    # Check that broad logs permissions are not used
+    assert '/aws/bedrock/modelinvocations*' not in content or content.count('/aws/bedrock/modelinvocations*') == 0, (
+        "Logs permissions should not use wildcard access to all model logs"
+    )
+
+
+def test_resource_protection_policies():
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 11: Resource protection policies**
+    **Validates: Requirements 8.5 - Security hardening**
+    
+    Property: All critical resources should have DeletionPolicy and UpdateReplacePolicy
+    set to Retain to prevent accidental deletion or replacement.
+    """
+    resource_policies = extract_resource_policies()
+    
+    # Critical resources that must have protection policies
+    critical_resources = [
+        'NovaProDashboard',
+        'AlarmTopic', 
+        'HighErrorRateAlarm',
+        'HighP99LatencyAlarm', 
+        'DailyCostLimitAlarm',
+        'HighThrottlingRateAlarm',
+        'DashboardViewerPolicy',
+        'DashboardViewerRole'
+    ]
+    
+    for resource_name in critical_resources:
+        if resource_name in resource_policies:
+            resource_info = resource_policies[resource_name]
+            
+            assert resource_info.get('DeletionPolicy') == 'Retain', (
+                f"Critical resource '{resource_name}' should have DeletionPolicy: Retain"
+            )
+            
+            assert resource_info.get('UpdateReplacePolicy') == 'Retain', (
+                f"Critical resource '{resource_name}' should have UpdateReplacePolicy: Retain"
+            )
+
+
+def test_sns_topic_access_policy():
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 12: SNS topic access policy**
+    **Validates: Requirements 10.5 - Security hardening**
+    
+    Property: SNS topic should have a resource-based policy that restricts
+    publishing to CloudWatch service only and denies non-TLS connections.
+    """
+    import yaml
+    
+    with open('nova-pro-dashboard-template.yaml', 'r') as f:
+        content = f.read()
+    
+    # Check for SNS topic policy resource
+    assert 'AlarmTopicPolicy:' in content, (
+        "SNS topic should have a resource-based access policy"
+    )
+    
+    # Check for CloudWatch service principal restriction
+    assert 'cloudwatch.amazonaws.com' in content, (
+        "SNS topic policy should restrict publishing to CloudWatch service"
+    )
+    
+    # Check for TLS enforcement
+    assert 'aws:SecureTransport' in content, (
+        "SNS topic policy should enforce TLS connections"
+    )
+    
+    # Check for unauthorized publishing denial
+    assert 'DenyUnauthorizedPublishing' in content, (
+        "SNS topic policy should deny unauthorized publishing"
+    )
+
+
+@given(st.data())
+@settings(max_examples=50, deadline=None)
+def test_security_validation_property_based(data):
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 13: Security validation comprehensive**
+    **Validates: Requirements 9.1, 9.2 - Security hardening**
+    
+    Property-based test: For any security configuration in the template,
+    all security controls should be properly implemented.
+    """
+    # Test IAM trust policy restrictions
+    test_iam_trust_policy_restrictions()
+    
+    # Test CloudWatch permission region scoping
+    test_cloudwatch_permission_region_scoping()
+    
+    # Test logs permission model scoping
+    test_logs_permission_model_scoping()
+    
+    # Test resource protection policies
+    test_resource_protection_policies()
+    
+    # Test SNS topic access policy
+    test_sns_topic_access_policy()
+
+
 if __name__ == '__main__':
     # Run the basic test
     print("Running property test: Optional parameters have defaults...")
@@ -1353,5 +1551,30 @@ if __name__ == '__main__':
     print("\nRunning property-based test: Update-safe resource configuration...")
     test_update_safe_resource_configuration_property_based()
     print("✓ Update-safe resource configuration property-based test passed")
+    
+    print("\nRunning security validation tests...")
+    print("  - Testing IAM trust policy restrictions...")
+    test_iam_trust_policy_restrictions()
+    print("  ✓ IAM trust policy restrictions test passed")
+    
+    print("  - Testing CloudWatch permission region scoping...")
+    test_cloudwatch_permission_region_scoping()
+    print("  ✓ CloudWatch permission region scoping test passed")
+    
+    print("  - Testing logs permission model scoping...")
+    test_logs_permission_model_scoping()
+    print("  ✓ Logs permission model scoping test passed")
+    
+    print("  - Testing resource protection policies...")
+    test_resource_protection_policies()
+    print("  ✓ Resource protection policies test passed")
+    
+    print("  - Testing SNS topic access policy...")
+    test_sns_topic_access_policy()
+    print("  ✓ SNS topic access policy test passed")
+    
+    print("\nRunning comprehensive security validation property-based test...")
+    test_security_validation_property_based()
+    print("✓ Comprehensive security validation property-based test passed")
     
     print("\n✓ All tests passed!")

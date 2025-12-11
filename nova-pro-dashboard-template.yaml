@@ -310,7 +310,7 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          # CloudWatch dashboard and metrics permissions - scoped to dashboard and Bedrock metrics
+          # CloudWatch dashboard permissions - scoped to specific dashboard and monitoring region
           - Effect: Allow
             Action:
               - cloudwatch:GetDashboard
@@ -318,7 +318,11 @@ Resources:
             Resource: 
               - Fn::Sub: 'arn:${AWS::Partition}:cloudwatch:${MonitoringRegion}:${AWS::AccountId}:dashboard/${DashboardName}'
               - Fn::Sub: 'arn:${AWS::Partition}:cloudwatch:${MonitoringRegion}:${AWS::AccountId}:dashboard/*'
-          # CloudWatch metrics permissions - scoped to Bedrock namespace only
+            Condition:
+              StringEquals:
+                # SECURITY: Enforce region scoping for dashboard operations
+                'aws:RequestedRegion': !Ref MonitoringRegion
+          # CloudWatch metrics permissions - scoped to Bedrock namespace and monitoring region only
           - Effect: Allow
             Action:
               - cloudwatch:GetMetricData
@@ -330,15 +334,18 @@ Resources:
                 'cloudwatch:namespace': 
                   - 'AWS/Bedrock'
                   - 'AWS/Bedrock/Guardrails'
+                # SECURITY: Enforce region scoping for all CloudWatch metric operations
                 'aws:RequestedRegion': !Ref MonitoringRegion
-          # CloudWatch Logs permissions for log insights widgets - scoped to Bedrock logs only
+          # CloudWatch Logs permissions for log insights widgets - scoped to specific model logs only
           - Effect: Allow
             Action:
               - logs:StartQuery
               - logs:GetQueryResults
               - logs:DescribeLogGroups
             Resource: 
-              - Fn::Sub: 'arn:${AWS::Partition}:logs:${MonitoringRegion}:${AWS::AccountId}:log-group:/aws/bedrock/modelinvocations*'
+              # SECURITY: Scope to specific model logs to prevent access to other models' logs
+              - Fn::Sub: 'arn:${AWS::Partition}:logs:${MonitoringRegion}:${AWS::AccountId}:log-group:/aws/bedrock/modelinvocations/${ModelId}*'
+              - Fn::Sub: 'arn:${AWS::Partition}:logs:${MonitoringRegion}:${AWS::AccountId}:log-group:/aws/bedrock/modelinvocations/${ModelId}:*'
             Condition:
               StringEquals:
                 'aws:RequestedRegion': !Ref MonitoringRegion
@@ -366,11 +373,26 @@ Resources:
           - Effect: Allow
             Principal:
               AWS:
-                Fn::Sub: 'arn:${AWS::Partition}:iam::${AWS::AccountId}:root'
+                # SECURITY: Restrict to specific users/roles instead of account root
+                # Replace these with actual user/role ARNs in production
+                - Fn::Sub: 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/dashboard-admin'
+                - Fn::Sub: 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/MonitoringTeamRole'
             Action: sts:AssumeRole
             Condition:
               StringEquals:
                 'aws:RequestedRegion': !Ref MonitoringRegion
+                # SECURITY: Add ExternalId for cross-account access security
+                'sts:ExternalId': !Sub '${DashboardName}-${AWS::AccountId}'
+              # SECURITY: Add time-based access restrictions
+              DateGreaterThan:
+                'aws:CurrentTime': '2025-01-01T00:00:00Z'
+              DateLessThan:
+                'aws:CurrentTime': '2026-12-31T23:59:59Z'
+              # SECURITY: Add source IP restrictions (uncomment and customize for production)
+              # IpAddress:
+              #   'aws:SourceIp': 
+              #     - '203.0.113.0/24'  # Replace with your organization's IP ranges
+              #     - '198.51.100.0/24'
       # Reference the managed policy for dashboard access
       ManagedPolicyArns:
         - !Ref DashboardViewerPolicy
@@ -443,6 +465,46 @@ Resources:
           Value: NovaProMonitoring
         - Key: Component
           Value: AlarmNotification
+
+  # SNS Topic Access Policy - Restrict publishing to CloudWatch service only
+  AlarmTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Condition: HasAlarmEmail
+    Properties:
+      Topics:
+        - !Ref AlarmTopic
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          # Allow CloudWatch service to publish alarm notifications
+          - Sid: AllowCloudWatchAlarmsToPublish
+            Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref AlarmTopic
+            Condition:
+              StringEquals:
+                'aws:SourceAccount': !Ref 'AWS::AccountId'
+          # Deny all non-TLS connections for security
+          - Sid: DenyInsecureConnections
+            Effect: Deny
+            Principal: '*'
+            Action: '*'
+            Resource: !Ref AlarmTopic
+            Condition:
+              Bool:
+                'aws:SecureTransport': 'false'
+          # Deny unauthorized publishing (only CloudWatch allowed)
+          - Sid: DenyUnauthorizedPublishing
+            Effect: Deny
+            Principal: '*'
+            Action: 
+              - sns:Publish
+            Resource: !Ref AlarmTopic
+            Condition:
+              StringNotEquals:
+                'aws:PrincipalServiceName': 'cloudwatch.amazonaws.com'
   
   # SNS Email Subscription
   # Subscribes the provided email address to the alarm topic
