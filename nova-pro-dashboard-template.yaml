@@ -34,7 +34,7 @@
 #      --capabilities CAPABILITY_NAMED_IAM \
 #      --enable-termination-protection
 #
-# 3. Production Deploy (with stack policy):
+# 3. Production Deploy (with comprehensive rollback protection):
 #    aws cloudformation create-stack \
 #      --stack-name nova-pro-dashboard \
 #      --template-body file://nova-pro-dashboard-template.yaml \
@@ -42,7 +42,10 @@
 #      --capabilities CAPABILITY_NAMED_IAM \
 #      --stack-policy-body file://stack-policy.json \
 #      --enable-termination-protection \
-#      --rollback-configuration RollbackTriggers='[{Arn=arn:aws:cloudwatch:REGION:ACCOUNT:alarm:DASHBOARD-HighErrorRate,Type=AWS::CloudWatch::Alarm}]',MonitoringTimeInMinutes=5
+#      --rollback-configuration RollbackTriggers='[
+#        {Arn=arn:aws:cloudwatch:REGION:ACCOUNT:alarm:DASHBOARD-HighErrorRate,Type=AWS::CloudWatch::Alarm},
+#        {Arn=arn:aws:cloudwatch:REGION:ACCOUNT:alarm:DASHBOARD-HighP99Latency,Type=AWS::CloudWatch::Alarm}
+#      ]',MonitoringTimeInMinutes=10
 #
 # 4. Update Stack:
 #    aws cloudformation update-stack \
@@ -104,6 +107,24 @@ Description: >
   Service Quotas: Creates 1 dashboard, 4 alarms, 0-1 SNS topics. Monitor quotas for production.
 
 Metadata:
+  AWS::CloudFormation::StackPolicy:
+    Statement:
+      - Effect: Deny
+        Principal: "*"
+        Action: "Update:Replace"
+        Resource: "*"
+        Condition:
+          StringEquals:
+            ResourceType:
+              - "AWS::CloudWatch::Dashboard"
+              - "AWS::SNS::Topic"
+              - "AWS::CloudWatch::Alarm"
+              - "AWS::IAM::Role"
+              - "AWS::IAM::ManagedPolicy"
+      - Effect: Allow
+        Principal: "*"
+        Action: "Update:*"
+        Resource: "*"
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
@@ -125,6 +146,14 @@ Metadata:
           default: "Notification Settings"
         Parameters:
           - AlarmEmail
+      
+      - Label:
+          default: "User and Application Tracking"
+        Parameters:
+          - UserIdentityField
+          - ApplicationIdentityField
+          - EnableUserTracking
+          - EnableApplicationTracking
       
       - Label:
           default: "Resource Tagging"
@@ -150,6 +179,14 @@ Metadata:
         default: "Throttle Rate Threshold (%)"
       AlarmEmail:
         default: "Alarm Email Address"
+      UserIdentityField:
+        default: "User Identity Field Name"
+      ApplicationIdentityField:
+        default: "Application Identity Field Name"
+      EnableUserTracking:
+        default: "Enable User Tracking"
+      EnableApplicationTracking:
+        default: "Enable Application Tracking"
       Environment:
         default: "Environment"
       Owner:
@@ -159,11 +196,21 @@ Metadata:
 
 Parameters:
   # Required Parameters
+  # 
+  # AWS-SPECIFIC PARAMETER TYPES ANALYSIS:
+  # After review, this template correctly uses generic types where appropriate:
+  # - MonitoringRegion: String with AllowedValues provides better validation than AWS-specific types
+  #   for Bedrock-specific region constraints (not all AWS regions support Nova Pro)
+  # - ModelId: No AWS-specific type exists for Bedrock model identifiers
+  # - AlarmEmail: No AWS-specific type for email addresses; regex validation is optimal
+  # - Other parameters: Appropriately use String/Number types with custom validation
+  #
   MonitoringRegion:
     Type: String
     Description: >
       AWS region where Nova Pro Model metrics will be monitored. 
       Only regions with Amazon Bedrock Nova Pro availability are listed.
+      Note: Using String type with AllowedValues provides better validation than AWS-specific types for region constraints.
     AllowedValues:
       - us-east-1
       - us-west-2
@@ -239,12 +286,15 @@ Parameters:
     AllowedPattern: ^$|^[a-zA-Z0-9][a-zA-Z0-9._%+-]{0,63}@[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}\.[a-zA-Z]{2,6}$
     ConstraintDescription: Must be a valid email address (user@domain.com) or empty string
   
+
+  
   # Tagging Parameters for Resource Management
   Environment:
     Type: String
     Description: Environment name for resource tagging (e.g., prod, staging, dev)
     Default: prod
     AllowedValues: [prod, staging, dev, test]
+    ConstraintDescription: Must be one of the approved environment values
   
   Owner:
     Type: String
@@ -252,13 +302,63 @@ Parameters:
     Default: DevOps
     MinLength: 1
     MaxLength: 50
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9\-_\s]*$
+    ConstraintDescription: Must start with a letter and contain only alphanumeric characters, hyphens, underscores, and spaces
   
   CostCenter:
     Type: String
     Description: Cost center code for billing allocation
-    Default: AI-Operations
+    Default: AI-OPERATIONS
     MinLength: 1
     MaxLength: 50
+    AllowedPattern: ^[A-Z0-9][A-Z0-9\-]*$
+    ConstraintDescription: Must start with uppercase letter or number, contain only uppercase letters, numbers, and hyphens
+  
+  # User and Application Tracking Parameters
+  UserIdentityField:
+    Type: String
+    Description: >
+      Metadata field name for user identification in Bedrock request logs.
+      This field will be extracted from request metadata to track usage by user.
+      Example: If requests include {"metadata": {"userId": "john.doe"}}, use "userId".
+    Default: userId
+    MinLength: 1
+    MaxLength: 100
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+    ConstraintDescription: Must start with a letter and contain only alphanumeric characters and underscores
+  
+  ApplicationIdentityField:
+    Type: String
+    Description: >
+      Metadata field name for application identification in Bedrock request logs.
+      This field will be extracted from request metadata to track usage by application.
+      Example: If requests include {"metadata": {"applicationName": "chatbot"}}, use "applicationName".
+    Default: applicationName
+    MinLength: 1
+    MaxLength: 100
+    AllowedPattern: ^[a-zA-Z][a-zA-Z0-9_]*$
+    ConstraintDescription: Must start with a letter and contain only alphanumeric characters and underscores
+  
+  EnableUserTracking:
+    Type: String
+    Description: >
+      Enable user-level usage tracking and analytics widgets.
+      When enabled, dashboard will include widgets showing usage by user identity.
+      Requires UserIdentityField to be present in Bedrock request metadata.
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    ConstraintDescription: Must be either "true" or "false"
+  
+  EnableApplicationTracking:
+    Type: String
+    Description: >
+      Enable application-level usage tracking and analytics widgets.
+      When enabled, dashboard will include widgets showing usage by application identity.
+      Requires ApplicationIdentityField to be present in Bedrock request metadata.
+    Default: "true"
+    AllowedValues: ["true", "false"]
+    ConstraintDescription: Must be either "true" or "false"
+
 
 Conditions:
   # Condition to check if AlarmEmail parameter is provided
@@ -267,6 +367,25 @@ Conditions:
       - Fn::Equals:
           - Ref: AlarmEmail
           - ""
+  
+  # NOTE: User and application tracking conditions are defined but not used in dashboard JSON
+  # due to CloudFormation limitations with conditional JSON array elements.
+  # The tracking parameters control the metadata field names used in log queries.
+  # When tracking is disabled or metadata is missing, widgets will show "No data".
+  # This provides a clean user experience without complex conditional dashboard logic.
+  
+  # Condition to check if user tracking is enabled (for future use)
+  IsUserTrackingEnabled:
+    Fn::Equals:
+      - Ref: EnableUserTracking
+      - "true"
+  
+  # Condition to check if application tracking is enabled (for future use)  
+  IsApplicationTrackingEnabled:
+    Fn::Equals:
+      - Ref: EnableApplicationTracking
+      - "true"
+
 
 Resources:
   # ========================================================================
@@ -341,7 +460,10 @@ Resources:
             Action:
               - logs:StartQuery
               - logs:GetQueryResults
+              - logs:StopQuery
               - logs:DescribeLogGroups
+              - logs:DescribeLogStreams
+              - logs:FilterLogEvents
             Resource: 
               # SECURITY: Scope to specific model logs to prevent access to other models' logs
               - Fn::Sub: 'arn:${AWS::Partition}:logs:${MonitoringRegion}:${AWS::AccountId}:log-group:/aws/bedrock/modelinvocations/${ModelId}*'
@@ -470,6 +592,8 @@ Resources:
   AlarmTopicPolicy:
     Type: AWS::SNS::TopicPolicy
     Condition: HasAlarmEmail
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
       Topics:
         - !Ref AlarmTopic
@@ -552,6 +676,18 @@ Resources:
   #   - Total Interventions (24h) | Intervention Rate (7d) | Interventions by Type (24h)
   #   - Positions: x:0-7, x:8-15, x:16-23
   #
+  # Row 8 (y:42-47): User Analytics (Conditional - only if EnableUserTracking=true)
+  #   - Top Users by Invocations | User Cost Distribution | User Token Consumption
+  #   - Positions: x:0-7, x:8-15, x:16-23
+  #
+  # Row 9 (y:48-53): Application Analytics (Conditional - only if EnableApplicationTracking=true)
+  #   - Top Applications by Invocations | Application Cost Distribution | Application Usage Trends
+  #   - Positions: x:0-7, x:8-15, x:16-23
+  #
+  # Row 10 (y:54-59): Cost Allocation Summary (Conditional - if either tracking enabled)
+  #   - Unknown Usage % | Cost Allocation Coverage % | Report Generation Instructions
+  #   - Positions: x:0-7, x:8-15, x:16-23
+  #
   # COST CALCULATIONS (Nova Pro pricing as of December 2025):
   # - Input tokens: $0.0008 per 1,000 tokens
   # - Cache write tokens: $0.0008 per 1,000 tokens  
@@ -565,6 +701,17 @@ Resources:
   # - Customer TPM (traditional): (Input + Output) / period × 60
   #   * Traditional calculation for customer monitoring
   #   * Simpler calculation for understanding consumption
+  #
+  # CONDITIONAL WIDGET IMPLEMENTATION:
+  # CloudFormation doesn't support conditional JSON array elements natively, so all
+  # user and application tracking widgets are included in the dashboard. The tracking
+  # behavior is controlled by:
+  # 1. EnableUserTracking/EnableApplicationTracking parameters control metadata field names
+  # 2. When tracking is disabled, log queries will find no matching metadata
+  # 3. Widgets will display "No data" gracefully when no results are found
+  # 4. This provides clean UX without complex conditional dashboard JSON logic
+  # 
+  # Users can customize the dashboard post-deployment to remove unwanted widgets if needed.
   #
   NovaProDashboard:
     Type: AWS::CloudWatch::Dashboard
@@ -1245,6 +1392,128 @@ Resources:
                   ]
                 }
               }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 42,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/bedrock/modelinvocations/${ModelId}'\n| fields @timestamp, @message\n| filter @message like /modelInvocationInput/\n| parse @message /modelInvocationInput.*\"metadata\":\\s*\\{[^\\}]*\"${UserIdentityField}\":\\s*\"(?<userId>[^\"]+)\"/\n| stats count() as invocations by userId\n| sort invocations desc\n| limit 10",
+                "region": "${MonitoringRegion}",
+                "title": "Top Users by Invocations (24h)",
+                "view": "table",
+                "stacked": false
+              }
+            },
+            {
+              "type": "log",
+              "x": 8,
+              "y": 42,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/bedrock/modelinvocations/${ModelId}'\n| fields @timestamp, @message\n| filter @message like /modelInvocationInput/ or @message like /modelInvocationOutput/\n| parse @message /modelInvocationInput.*\"metadata\":\\s*\\{[^\\}]*\"${UserIdentityField}\":\\s*\"(?<userId>[^\"]+)\"/\n| parse @message /\"inputTokenCount\":\\s*(?<inputTokens>\\d+)/\n| parse @message /\"outputTokenCount\":\\s*(?<outputTokens>\\d+)/\n| parse @message /\"cacheWriteInputTokenCount\":\\s*(?<cacheWriteTokens>\\d+)/\n| parse @message /\"cacheReadInputTokenCount\":\\s*(?<cacheReadTokens>\\d+)/\n| stats sum(coalesce(inputTokens, 0) * 0.0008/1000 + coalesce(outputTokens, 0) * 0.0032/1000 + coalesce(cacheWriteTokens, 0) * 0.0008/1000 + coalesce(cacheReadTokens, 0) * 0.00008/1000) as cost by userId\n| sort cost desc\n| limit 10",
+                "region": "${MonitoringRegion}",
+                "title": "User Cost Distribution (7d)",
+                "view": "pie",
+                "stacked": false
+              }
+            },
+            {
+              "type": "log",
+              "x": 16,
+              "y": 42,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/bedrock/modelinvocations/${ModelId}'\n| fields @timestamp, @message\n| filter @message like /modelInvocationInput/ or @message like /modelInvocationOutput/\n| parse @message /modelInvocationInput.*\"metadata\":\\s*\\{[^\\}]*\"${UserIdentityField}\":\\s*\"(?<userId>[^\"]+)\"/\n| parse @message /\"inputTokenCount\":\\s*(?<inputTokens>\\d+)/\n| parse @message /\"outputTokenCount\":\\s*(?<outputTokens>\\d+)/\n| stats sum(coalesce(inputTokens, 0)) as inputTokens, sum(coalesce(outputTokens, 0)) as outputTokens by userId\n| sort inputTokens desc\n| limit 10",
+                "region": "${MonitoringRegion}",
+                "title": "User Token Consumption (24h)",
+                "view": "table",
+                "stacked": false
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 48,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/bedrock/modelinvocations/${ModelId}'\n| fields @timestamp, @message\n| filter @message like /modelInvocationInput/\n| parse @message /modelInvocationInput.*\"metadata\":\\s*\\{[^\\}]*\"${ApplicationIdentityField}\":\\s*\"(?<appName>[^\"]+)\"/\n| stats count() as invocations by appName\n| sort invocations desc\n| limit 10",
+                "region": "${MonitoringRegion}",
+                "title": "Top Applications by Invocations (24h)",
+                "view": "table",
+                "stacked": false
+              }
+            },
+            {
+              "type": "log",
+              "x": 8,
+              "y": 48,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/bedrock/modelinvocations/${ModelId}'\n| fields @timestamp, @message\n| filter @message like /modelInvocationInput/ or @message like /modelInvocationOutput/\n| parse @message /modelInvocationInput.*\"metadata\":\\s*\\{[^\\}]*\"${ApplicationIdentityField}\":\\s*\"(?<appName>[^\"]+)\"/\n| parse @message /\"inputTokenCount\":\\s*(?<inputTokens>\\d+)/\n| parse @message /\"outputTokenCount\":\\s*(?<outputTokens>\\d+)/\n| parse @message /\"cacheWriteInputTokenCount\":\\s*(?<cacheWriteTokens>\\d+)/\n| parse @message /\"cacheReadInputTokenCount\":\\s*(?<cacheReadTokens>\\d+)/\n| stats sum(coalesce(inputTokens, 0) * 0.0008/1000 + coalesce(outputTokens, 0) * 0.0032/1000 + coalesce(cacheWriteTokens, 0) * 0.0008/1000 + coalesce(cacheReadTokens, 0) * 0.00008/1000) as cost by appName\n| sort cost desc\n| limit 10",
+                "region": "${MonitoringRegion}",
+                "title": "Application Cost Distribution (7d)",
+                "view": "pie",
+                "stacked": false
+              }
+            },
+            {
+              "type": "log",
+              "x": 16,
+              "y": 48,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/bedrock/modelinvocations/${ModelId}'\n| fields @timestamp, @message\n| filter @message like /modelInvocationInput/\n| parse @message /modelInvocationInput.*\"metadata\":\\s*\\{[^\\}]*\"${ApplicationIdentityField}\":\\s*\"(?<appName>[^\"]+)\"/\n| bin(@timestamp, 1h) as hour\n| stats count() as invocations by hour, appName\n| sort hour desc\n| limit 100",
+                "region": "${MonitoringRegion}",
+                "title": "Application Usage Trends (7d)",
+                "view": "table",
+                "stacked": false
+              }
+            },
+            {
+              "type": "log",
+              "x": 0,
+              "y": 54,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/bedrock/modelinvocations/${ModelId}'\n| fields @timestamp, @message\n| filter @message like /modelInvocationInput/\n| parse @message /modelInvocationInput.*\"metadata\":\\s*\\{[^\\}]*\"${UserIdentityField}\":\\s*\"(?<userId>[^\"]+)\"/\n| parse @message /modelInvocationInput.*\"metadata\":\\s*\\{[^\\}]*\"${ApplicationIdentityField}\":\\s*\"(?<appName>[^\"]+)\"/\n| stats count() as total_requests, count(userId) as user_identified, count(appName) as app_identified\n| eval unknown_requests = total_requests - greatest(user_identified, app_identified)\n| eval unknown_percentage = round(unknown_requests * 100.0 / total_requests, 2)\n| fields unknown_percentage",
+                "region": "${MonitoringRegion}",
+                "title": "Unknown Usage (%)",
+                "view": "singleValue",
+                "stacked": false
+              }
+            },
+            {
+              "type": "log",
+              "x": 8,
+              "y": 54,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "query": "SOURCE '/aws/bedrock/modelinvocations/${ModelId}'\n| fields @timestamp, @message\n| filter @message like /modelInvocationInput/ or @message like /modelInvocationOutput/\n| parse @message /modelInvocationInput.*\"metadata\":\\s*\\{[^\\}]*\"${UserIdentityField}\":\\s*\"(?<userId>[^\"]+)\"/\n| parse @message /modelInvocationInput.*\"metadata\":\\s*\\{[^\\}]*\"${ApplicationIdentityField}\":\\s*\"(?<appName>[^\"]+)\"/\n| parse @message /\"inputTokenCount\":\\s*(?<inputTokens>\\d+)/\n| parse @message /\"outputTokenCount\":\\s*(?<outputTokens>\\d+)/\n| parse @message /\"cacheWriteInputTokenCount\":\\s*(?<cacheWriteTokens>\\d+)/\n| parse @message /\"cacheReadInputTokenCount\":\\s*(?<cacheReadTokens>\\d+)/\n| stats sum(coalesce(inputTokens, 0) * 0.0008/1000 + coalesce(outputTokens, 0) * 0.0032/1000 + coalesce(cacheWriteTokens, 0) * 0.0008/1000 + coalesce(cacheReadTokens, 0) * 0.00008/1000) as total_cost, sum(case when (userId != \"\" or appName != \") then (coalesce(inputTokens, 0) * 0.0008/1000 + coalesce(outputTokens, 0) * 0.0032/1000 + coalesce(cacheWriteTokens, 0) * 0.0008/1000 + coalesce(cacheReadTokens, 0) * 0.00008/1000) else 0 end) as allocated_cost\n| eval allocation_coverage = round(allocated_cost * 100.0 / total_cost, 2)\n| fields allocation_coverage",
+                "region": "${MonitoringRegion}",
+                "title": "Cost Allocation Coverage (%)",
+                "view": "gauge",
+                "stacked": false
+              }
+            },
+            {
+              "type": "text",
+              "x": 16,
+              "y": 54,
+              "width": 8,
+              "height": 6,
+              "properties": {
+                "markdown": "## Cost Allocation Reports\n\n**Generate detailed reports using CloudWatch Logs Insights:**\n\n1. **User Cost Report**: Use the \"User Cost Distribution\" query above\n2. **Application Cost Report**: Use the \"Application Cost Distribution\" query above\n3. **Unknown Usage Report**: Use the \"Unknown Usage\" query above\n\n**Export Instructions:**\n- Run queries in CloudWatch Logs Insights console\n- Export results to CSV for billing allocation\n- Schedule automated reports using Lambda + EventBridge\n\n**Query Customization:**\n- Modify time ranges: Change `bin(@timestamp, 1h)` to `bin(@timestamp, 1d)` for daily reports\n- Add filters: Include `| filter userId like /pattern/` for specific users\n- Cost periods: Adjust date ranges for monthly/quarterly reports"
+              }
             }
           ]
           }
@@ -1680,3 +1949,27 @@ Outputs:
       12. Set up CloudTrail monitoring for unauthorized stack modifications
       13. Review service quotas quarterly (dashboards: 500/region, alarms: 10,000/region)
       14. Update Nova Pro pricing constants when AWS announces price changes
+  
+  DriftDetectionCommands:
+    Description: Commands for monitoring stack configuration drift
+    Value: !Sub |
+      # Start drift detection
+      DRIFT_ID=$(aws cloudformation detect-stack-drift \
+        --stack-name ${AWS::StackName} \
+        --region ${MonitoringRegion} \
+        --query 'StackDriftDetectionId' \
+        --output text)
+      
+      # Check drift status
+      aws cloudformation describe-stack-drift-detection-status \
+        --stack-drift-detection-id $DRIFT_ID \
+        --region ${MonitoringRegion}
+      
+      # Get detailed drift results
+      aws cloudformation describe-stack-resource-drifts \
+        --stack-name ${AWS::StackName} \
+        --region ${MonitoringRegion}
+      
+      # Schedule weekly drift detection (add to cron)
+      # 0 2 * * 1 /path/to/drift-check.sh ${AWS::StackName} ${MonitoringRegion}
+

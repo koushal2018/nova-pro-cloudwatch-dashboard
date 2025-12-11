@@ -234,12 +234,12 @@ def extract_dashboard_json():
         with open('nova-pro-dashboard-template.yaml', 'r') as f:
             content = f.read()
         
-        # Find the DashboardBody section
+        # Find the DashboardBody section more precisely
         start_marker = 'DashboardBody:'
-        end_marker = '# CloudWatch Alarms'
+        end_marker = '  # ========================================================================'
         
         start_idx = content.find(start_marker)
-        end_idx = content.find(end_marker)
+        end_idx = content.find(end_marker, start_idx)
         
         if start_idx == -1 or end_idx == -1:
             raise ValueError("Could not find dashboard JSON section in template")
@@ -630,8 +630,8 @@ def extract_iam_policies():
             # Find CloudWatch dashboard permissions
             if 'cloudwatch:GetDashboard' in policy_section and 'cloudwatch:ListDashboards' in policy_section:
                 # Check if this statement has resource scoping
-                dashboard_section = policy_section[policy_section.find('cloudwatch:GetDashboard'):policy_section.find('cloudwatch:GetDashboard') + 500]
-                has_resource_scoping = 'arn:aws:cloudwatch:' in dashboard_section and 'dashboard/' in dashboard_section
+                dashboard_section = policy_section[policy_section.find('cloudwatch:GetDashboard'):policy_section.find('cloudwatch:GetDashboard') + 800]
+                has_resource_scoping = ('arn:aws:cloudwatch:' in dashboard_section or 'arn:${AWS::Partition}:cloudwatch:' in dashboard_section) and 'dashboard' in dashboard_section
                 
                 statements.append({
                     'actions': ['cloudwatch:GetDashboard', 'cloudwatch:ListDashboards'],
@@ -1460,6 +1460,670 @@ def test_sns_topic_access_policy():
     )
 
 
+def extract_user_analytics_queries():
+    """Extract CloudWatch Logs Insights queries for user analytics from the dashboard."""
+    try:
+        dashboard_json = extract_dashboard_json()
+        if not dashboard_json:
+            return []
+        
+        widgets = dashboard_json.get('widgets', [])
+        user_analytics_queries = []
+        
+        for i, widget in enumerate(widgets):
+            if widget.get('type') == 'log':
+                properties = widget.get('properties', {})
+                query = properties.get('query', '')
+                title = properties.get('title', '')
+                
+                # Check if this is a user analytics query
+                if ('${UserIdentityField}' in query or 
+                    'userId' in query or 
+                    'User' in title):
+                    user_analytics_queries.append({
+                        'widget_index': i,
+                        'title': title,
+                        'query': query,
+                        'properties': properties
+                    })
+        
+        return user_analytics_queries
+        
+    except Exception as e:
+        print(f"Error extracting user analytics queries: {e}")
+        return []
+
+
+def extract_application_analytics_queries():
+    """Extract CloudWatch Logs Insights queries for application analytics from the dashboard."""
+    try:
+        dashboard_json = extract_dashboard_json()
+        if not dashboard_json:
+            return []
+        
+        widgets = dashboard_json.get('widgets', [])
+        application_analytics_queries = []
+        
+        for i, widget in enumerate(widgets):
+            if widget.get('type') == 'log':
+                properties = widget.get('properties', {})
+                query = properties.get('query', '')
+                title = properties.get('title', '')
+                
+                # Check if this is an application analytics query
+                if ('${ApplicationIdentityField}' in query or 
+                    'appName' in query or 
+                    'Application' in title):
+                    application_analytics_queries.append({
+                        'widget_index': i,
+                        'title': title,
+                        'query': query,
+                        'properties': properties
+                    })
+        
+        return application_analytics_queries
+        
+    except Exception as e:
+        print(f"Error extracting application analytics queries: {e}")
+        return []
+
+
+def test_user_identity_extraction_consistency():
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 8: User identity extraction consistency**
+    **Validates: Requirements 12.3**
+    
+    Property: For any CloudWatch Logs Insights query that extracts user identity, 
+    the query should use the UserIdentityField parameter value in the regex pattern 
+    for metadata field extraction.
+    
+    This ensures that user analytics adapt to different organizations' metadata field
+    naming conventions by using the configurable UserIdentityField parameter.
+    """
+    user_queries = extract_user_analytics_queries()
+    assert len(user_queries) > 0, (
+        "Template should contain user analytics queries with user identity extraction"
+    )
+    
+    for query_info in user_queries:
+        query = query_info['query']
+        title = query_info['title']
+        
+        # Skip queries that don't extract user identity
+        if 'userId' not in query and '${UserIdentityField}' not in query:
+            continue
+        
+        # Check that the query uses the UserIdentityField parameter
+        assert '${UserIdentityField}' in query, (
+            f"User analytics query '{title}' should use UserIdentityField parameter "
+            f"in regex pattern for metadata field extraction per Requirements 12.3. "
+            f"Found query: {query[:100]}..."
+        )
+        
+        # Check that the regex pattern correctly uses the parameter
+        # The pattern should be: "metadata":\s*\{[^\}]*"${UserIdentityField}":\s*"(?<userId>[^"]+)"
+        expected_pattern = '"${UserIdentityField}":\\s*"(?<userId>[^"]+)"'
+        assert expected_pattern in query, (
+            f"User analytics query '{title}' should use correct regex pattern "
+            f"with UserIdentityField parameter. Expected pattern: {expected_pattern}. "
+            f"Found query: {query[:200]}..."
+        )
+
+
+def test_user_analytics_completeness():
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 10: User analytics completeness**
+    **Validates: Requirements 11.3**
+    
+    Property: For any user analytics widget that displays metrics, the underlying 
+    log query should return invocation count, token consumption, and cost calculation fields.
+    
+    This ensures that user analytics provide comprehensive information for cost allocation
+    and usage monitoring per user.
+    """
+    user_queries = extract_user_analytics_queries()
+    assert len(user_queries) > 0, (
+        "Template should contain user analytics queries"
+    )
+    
+    # Check each user analytics query for completeness
+    required_analytics = {
+        'invocations': False,
+        'cost': False, 
+        'tokens': False
+    }
+    
+    for query_info in user_queries:
+        query = query_info['query']
+        title = query_info['title'].lower()
+        
+        # Check for invocation count analytics
+        if ('invocations' in title or 'count()' in query):
+            required_analytics['invocations'] = True
+            
+            # Invocation queries should count by userId
+            assert 'count() as invocations by userId' in query or 'count()' in query, (
+                f"User invocation query should count invocations by userId. "
+                f"Query: {query[:100]}..."
+            )
+        
+        # Check for cost analytics
+        if ('cost' in title or '0.0008' in query or '0.0032' in query):
+            required_analytics['cost'] = True
+            
+            # Cost queries should include all token types and pricing
+            cost_components = [
+                'inputTokens', 'outputTokens', 
+                '0.0008/1000', '0.0032/1000'  # Nova Pro pricing
+            ]
+            
+            for component in cost_components:
+                if component in ['0.0008/1000', '0.0032/1000']:
+                    # Pricing should be present
+                    assert component in query, (
+                        f"User cost query should include {component} pricing component. "
+                        f"Query: {query[:200]}..."
+                    )
+        
+        # Check for token consumption analytics
+        if ('token' in title or 'inputTokens' in query or 'outputTokens' in query):
+            required_analytics['tokens'] = True
+            
+            # Token queries should parse both input and output tokens
+            token_fields = ['inputTokens', 'outputTokens']
+            for field in token_fields:
+                assert field in query, (
+                    f"User token query should include {field} field. "
+                    f"Query: {query[:200]}..."
+                )
+    
+    # Verify all required analytics are present
+    missing_analytics = [k for k, v in required_analytics.items() if not v]
+    assert len(missing_analytics) == 0, (
+        f"User analytics are missing required components: {missing_analytics}. "
+        f"All user analytics widgets should provide invocation count, token consumption, "
+        f"and cost calculation fields per Requirements 11.3"
+    )
+
+
+@given(st.data())
+@settings(max_examples=100, deadline=None)
+def test_user_identity_extraction_consistency_property_based(data):
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 8: User identity extraction consistency**
+    **Validates: Requirements 12.3**
+    
+    Property-based test: For any subset of user analytics queries in the template,
+    all should use the UserIdentityField parameter consistently.
+    """
+    user_queries = extract_user_analytics_queries()
+    if not user_queries:
+        return  # Skip if no user analytics queries
+    
+    # Filter to queries that extract user identity
+    identity_queries = [
+        q for q in user_queries 
+        if ('userId' in q['query'] or '${UserIdentityField}' in q['query'])
+    ]
+    
+    if not identity_queries:
+        return  # Skip if no identity extraction queries
+    
+    # Select a random subset of identity queries to check
+    query_indices = list(range(len(identity_queries)))
+    selected_indices = data.draw(
+        st.lists(
+            st.sampled_from(query_indices),
+            min_size=1,
+            max_size=len(identity_queries),
+            unique=True
+        )
+    )
+    
+    selected_queries = [identity_queries[i] for i in selected_indices]
+    
+    for query_info in selected_queries:
+        query = query_info['query']
+        title = query_info['title']
+        
+        # Each selected query should use UserIdentityField parameter
+        assert '${UserIdentityField}' in query, (
+            f"Query '{title}' should use UserIdentityField parameter"
+        )
+        
+        # Should use correct regex pattern
+        expected_pattern = '"${UserIdentityField}":\\s*"(?<userId>[^"]+)"'
+        assert expected_pattern in query, (
+            f"Query '{title}' should use correct UserIdentityField regex pattern"
+        )
+
+
+@given(st.data())
+@settings(max_examples=100, deadline=None)
+def test_user_analytics_completeness_property_based(data):
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 10: User analytics completeness**
+    **Validates: Requirements 11.3**
+    
+    Property-based test: For any subset of user analytics queries,
+    all should provide complete metric information (invocations, tokens, cost).
+    """
+    user_queries = extract_user_analytics_queries()
+    if not user_queries:
+        return  # Skip if no user analytics queries
+    
+    # Select a random subset of user queries to check
+    query_indices = list(range(len(user_queries)))
+    selected_indices = data.draw(
+        st.lists(
+            st.sampled_from(query_indices),
+            min_size=1,
+            max_size=min(5, len(user_queries)),  # Limit to 5 for performance
+            unique=True
+        )
+    )
+    
+    selected_queries = [user_queries[i] for i in selected_indices]
+    
+    # Check that collectively, the selected queries provide complete analytics
+    analytics_coverage = {
+        'invocations': False,
+        'cost': False,
+        'tokens': False
+    }
+    
+    for query_info in selected_queries:
+        query = query_info['query']
+        title = query_info['title'].lower()
+        
+        # Check what type of analytics this query provides
+        if 'invocations' in title or 'count()' in query:
+            analytics_coverage['invocations'] = True
+        
+        if 'cost' in title or '0.0008' in query or '0.0032' in query:
+            analytics_coverage['cost'] = True
+        
+        if 'token' in title or 'inputTokens' in query or 'outputTokens' in query:
+            analytics_coverage['tokens'] = True
+    
+    # If we selected queries, they should collectively provide some analytics
+    # Note: Not all queries need to provide all types - some are specialized
+    if len(selected_queries) >= 1:
+        covered_analytics = sum(analytics_coverage.values())
+        assert covered_analytics >= 1, (
+            f"Selected user analytics queries should provide at least 1 type of analytics. "
+            f"Coverage: {analytics_coverage}. "
+            f"Selected queries: {[q['title'] for q in selected_queries]}"
+        )
+
+
+def test_application_identity_extraction_consistency():
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 9: Application identity extraction consistency**
+    **Validates: Requirements 12.4**
+    
+    Property: For any CloudWatch Logs Insights query that extracts application identity, 
+    the query should use the ApplicationIdentityField parameter value in the regex pattern 
+    for metadata field extraction.
+    
+    This ensures that application analytics adapt to different organizations' metadata field
+    naming conventions by using the configurable ApplicationIdentityField parameter.
+    """
+    application_queries = extract_application_analytics_queries()
+    assert len(application_queries) > 0, (
+        "Template should contain application analytics queries with application identity extraction"
+    )
+    
+    for query_info in application_queries:
+        query = query_info['query']
+        title = query_info['title']
+        
+        # Skip queries that don't extract application identity
+        if 'appName' not in query and '${ApplicationIdentityField}' not in query:
+            continue
+        
+        # Check that the query uses the ApplicationIdentityField parameter
+        assert '${ApplicationIdentityField}' in query, (
+            f"Application analytics query '{title}' should use ApplicationIdentityField parameter "
+            f"in regex pattern for metadata field extraction per Requirements 12.4. "
+            f"Found query: {query[:100]}..."
+        )
+        
+        # Check that the regex pattern correctly uses the parameter
+        # The pattern should be: "metadata":\s*\{[^\}]*"${ApplicationIdentityField}":\s*"(?<appName>[^"]+)"
+        expected_pattern = '"${ApplicationIdentityField}":\\s*"(?<appName>[^"]+)"'
+        assert expected_pattern in query, (
+            f"Application analytics query '{title}' should use correct regex pattern "
+            f"with ApplicationIdentityField parameter. Expected pattern: {expected_pattern}. "
+            f"Found query: {query[:200]}..."
+        )
+
+
+def test_application_analytics_completeness():
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 11: Application analytics completeness**
+    **Validates: Requirements 11.4**
+    
+    Property: For any application analytics widget that displays metrics, the underlying 
+    log query should return invocation count, token consumption, and cost calculation fields.
+    
+    This ensures that application analytics provide comprehensive information for cost allocation
+    and usage monitoring per application.
+    """
+    application_queries = extract_application_analytics_queries()
+    assert len(application_queries) > 0, (
+        "Template should contain application analytics queries"
+    )
+    
+    # Check each application analytics query for completeness
+    required_analytics = {
+        'invocations': False,
+        'cost': False, 
+        'tokens': False
+    }
+    
+    for query_info in application_queries:
+        query = query_info['query']
+        title = query_info['title'].lower()
+        
+        # Check for invocation count analytics
+        if ('invocations' in title or 'count()' in query):
+            required_analytics['invocations'] = True
+            
+            # Invocation queries should count by appName
+            assert 'count() as invocations by appName' in query or 'count()' in query, (
+                f"Application invocation query should count invocations by appName. "
+                f"Query: {query[:100]}..."
+            )
+        
+        # Check for cost analytics
+        if ('cost' in title or '0.0008' in query or '0.0032' in query):
+            required_analytics['cost'] = True
+            
+            # Cost queries should include all token types and pricing
+            cost_components = [
+                'inputTokens', 'outputTokens', 
+                '0.0008/1000', '0.0032/1000'  # Nova Pro pricing
+            ]
+            
+            for component in cost_components:
+                if component in ['0.0008/1000', '0.0032/1000']:
+                    # Pricing should be present
+                    assert component in query, (
+                        f"Application cost query should include {component} pricing component. "
+                        f"Query: {query[:200]}..."
+                    )
+        
+        # Check for token consumption analytics
+        if ('token' in title or 'inputTokens' in query or 'outputTokens' in query):
+            required_analytics['tokens'] = True
+            
+            # Token queries should parse both input and output tokens
+            token_fields = ['inputTokens', 'outputTokens']
+            for field in token_fields:
+                assert field in query, (
+                    f"Application token query should include {field} field. "
+                    f"Query: {query[:200]}..."
+                )
+    
+    # Verify all required analytics are present
+    missing_analytics = [k for k, v in required_analytics.items() if not v]
+    assert len(missing_analytics) == 0, (
+        f"Application analytics are missing required components: {missing_analytics}. "
+        f"All application analytics widgets should provide invocation count, token consumption, "
+        f"and cost calculation fields per Requirements 11.4"
+    )
+
+
+@given(st.data())
+@settings(max_examples=100, deadline=None)
+def test_application_identity_extraction_consistency_property_based(data):
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 9: Application identity extraction consistency**
+    **Validates: Requirements 12.4**
+    
+    Property-based test: For any subset of application analytics queries in the template,
+    all should use the ApplicationIdentityField parameter consistently.
+    """
+    application_queries = extract_application_analytics_queries()
+    if not application_queries:
+        return  # Skip if no application analytics queries
+    
+    # Filter to queries that extract application identity
+    identity_queries = [
+        q for q in application_queries 
+        if ('appName' in q['query'] or '${ApplicationIdentityField}' in q['query'])
+    ]
+    
+    if not identity_queries:
+        return  # Skip if no identity extraction queries
+    
+    # Select a random subset of identity queries to check
+    query_indices = list(range(len(identity_queries)))
+    selected_indices = data.draw(
+        st.lists(
+            st.sampled_from(query_indices),
+            min_size=1,
+            max_size=len(identity_queries),
+            unique=True
+        )
+    )
+    
+    selected_queries = [identity_queries[i] for i in selected_indices]
+    
+    for query_info in selected_queries:
+        query = query_info['query']
+        title = query_info['title']
+        
+        # Each selected query should use ApplicationIdentityField parameter
+        assert '${ApplicationIdentityField}' in query, (
+            f"Query '{title}' should use ApplicationIdentityField parameter"
+        )
+        
+        # Should use correct regex pattern
+        expected_pattern = '"${ApplicationIdentityField}":\\s*"(?<appName>[^"]+)"'
+        assert expected_pattern in query, (
+            f"Query '{title}' should use correct ApplicationIdentityField regex pattern"
+        )
+
+
+@given(st.data())
+@settings(max_examples=100, deadline=None)
+def test_application_analytics_completeness_property_based(data):
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 11: Application analytics completeness**
+    **Validates: Requirements 11.4**
+    
+    Property-based test: For any subset of application analytics queries,
+    all should provide complete metric information (invocations, tokens, cost).
+    """
+    application_queries = extract_application_analytics_queries()
+    if not application_queries:
+        return  # Skip if no application analytics queries
+    
+    # Select a random subset of application queries to check
+    query_indices = list(range(len(application_queries)))
+    selected_indices = data.draw(
+        st.lists(
+            st.sampled_from(query_indices),
+            min_size=1,
+            max_size=min(5, len(application_queries)),  # Limit to 5 for performance
+            unique=True
+        )
+    )
+    
+    selected_queries = [application_queries[i] for i in selected_indices]
+    
+    # Check that collectively, the selected queries provide complete analytics
+    analytics_coverage = {
+        'invocations': False,
+        'cost': False,
+        'tokens': False
+    }
+    
+    for query_info in selected_queries:
+        query = query_info['query']
+        title = query_info['title'].lower()
+        
+        # Check what type of analytics this query provides
+        if 'invocations' in title or 'count()' in query:
+            analytics_coverage['invocations'] = True
+        
+        if 'cost' in title or '0.0008' in query or '0.0032' in query:
+            analytics_coverage['cost'] = True
+        
+        if 'token' in title or 'inputTokens' in query or 'outputTokens' in query:
+            analytics_coverage['tokens'] = True
+    
+    # If we selected queries, they should collectively provide some analytics
+    # Note: Not all queries need to provide all types - some are specialized
+    if len(selected_queries) >= 1:
+        covered_analytics = sum(analytics_coverage.values())
+        assert covered_analytics >= 1, (
+            f"Selected application analytics queries should provide at least 1 type of analytics. "
+            f"Coverage: {analytics_coverage}. "
+            f"Selected queries: {[q['title'] for q in selected_queries]}"
+        )
+
+
+def extract_unknown_usage_queries():
+    """Extract CloudWatch Logs Insights queries for unknown usage tracking from the dashboard."""
+    try:
+        # Read the template file directly as text to avoid YAML parsing issues
+        with open('nova-pro-dashboard-template.yaml', 'r') as f:
+            template_content = f.read()
+        
+        # Extract log widgets that handle unknown usage
+        unknown_queries = []
+        
+        # Look for widgets with titles related to unknown usage or allocation
+        import re
+        
+        # Extract the unknown usage widget
+        if 'Unknown Usage' in template_content:
+            # Find the query for unknown usage widget - look for the pattern before the title
+            pattern = r'"query":\s*"([^"]*(?:\\.[^"]*)*)"[^}]*?"title":\s*"Unknown Usage[^"]*"'
+            matches = re.findall(pattern, template_content, re.DOTALL)
+            for match in matches:
+                # Unescape the query string
+                query = match.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+                unknown_queries.append({
+                    'query': query,
+                    'title': 'Unknown Usage (%)',
+                    'type': 'unknown_usage'
+                })
+        
+        # Extract the cost allocation coverage widget
+        if 'Cost Allocation Coverage' in template_content:
+            pattern = r'"query":\s*"([^"]*(?:\\.[^"]*)*)"[^}]*?"title":\s*"Cost Allocation Coverage[^"]*"'
+            matches = re.findall(pattern, template_content, re.DOTALL)
+            for match in matches:
+                # Unescape the query string
+                query = match.replace('\\n', '\n').replace('\\"', '"').replace('\\\\', '\\')
+                unknown_queries.append({
+                    'query': query,
+                    'title': 'Cost Allocation Coverage (%)',
+                    'type': 'allocation_coverage'
+                })
+        
+        return unknown_queries
+        
+    except Exception as e:
+        print(f"Error extracting unknown usage queries: {e}")
+        return []
+
+
+def test_unknown_usage_categorization():
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 12: Unknown usage categorization**
+    **Validates: Requirements 11.5**
+    
+    Property: For any log query that processes requests without user or application metadata,
+    those requests should be categorized separately from identified requests.
+    
+    This ensures that unattributed usage is properly tracked and reported for cost allocation.
+    """
+    unknown_queries = extract_unknown_usage_queries()
+    assert len(unknown_queries) > 0, (
+        "Template should contain unknown usage tracking queries"
+    )
+    
+    # Check each unknown usage query for proper categorization
+    categorization_features = {
+        'identifies_unknown': False,
+        'separates_attributed': False,
+        'calculates_percentage': False
+    }
+    
+    for query_info in unknown_queries:
+        query = query_info['query']
+        title = query_info['title'].lower()
+        
+        # Check for unknown usage identification
+        if ('unknown' in title or 'allocation' in title):
+            # Verify the query identifies requests without metadata
+            if ('userId' in query and 'appName' in query):
+                categorization_features['identifies_unknown'] = True
+                
+            # Verify the query separates attributed from unattributed
+            if ('count(' in query and ('greatest(' in query or 'case when' in query)):
+                categorization_features['separates_attributed'] = True
+                
+            # Verify the query calculates percentages
+            if ('percentage' in query or '* 100' in query or 'round(' in query):
+                categorization_features['calculates_percentage'] = True
+    
+    # Verify all categorization features are present
+    missing_features = [feature for feature, present in categorization_features.items() if not present]
+    assert len(missing_features) == 0, (
+        f"Unknown usage queries missing categorization features: {missing_features}. "
+        f"Features found: {categorization_features}"
+    )
+
+
+@given(st.data())
+@settings(max_examples=100, deadline=None)
+def test_unknown_usage_categorization_property_based(data):
+    """
+    **Feature: nova-cloudwatch-dashboard, Property 12: Unknown usage categorization**
+    **Validates: Requirements 11.5**
+    
+    Property-based test: For any log query that processes requests without user or application metadata,
+    those requests should be categorized separately from identified requests.
+    """
+    unknown_queries = extract_unknown_usage_queries()
+    
+    # Select a subset of queries to test
+    if len(unknown_queries) > 0:
+        selected_queries = data.draw(st.lists(
+            st.sampled_from(unknown_queries),
+            min_size=1,
+            max_size=min(3, len(unknown_queries)),
+            unique=True
+        ))
+        
+        for query_info in selected_queries:
+            query = query_info['query']
+            
+            # Verify the query properly handles unknown usage categorization
+            # Check that it identifies both user and application fields
+            assert ('UserIdentityField' in query or 'userId' in query), (
+                f"Query should reference user identity field: {query_info['title']}"
+            )
+            assert ('ApplicationIdentityField' in query or 'appName' in query), (
+                f"Query should reference application identity field: {query_info['title']}"
+            )
+            
+            # Check that it performs proper categorization logic
+            has_categorization = (
+                'count(' in query and 
+                ('greatest(' in query or 'case when' in query or 'coalesce(' in query)
+            )
+            assert has_categorization, (
+                f"Query should have categorization logic: {query_info['title']}"
+            )
+
+
 @given(st.data())
 @settings(max_examples=50, deadline=None)
 def test_security_validation_property_based(data):
@@ -1576,5 +2240,29 @@ if __name__ == '__main__':
     print("\nRunning comprehensive security validation property-based test...")
     test_security_validation_property_based()
     print("✓ Comprehensive security validation property-based test passed")
+    
+    print("\nRunning property test: User identity extraction consistency...")
+    test_user_identity_extraction_consistency()
+    print("✓ User identity extraction consistency test passed")
+    
+    print("\nRunning property test: User analytics completeness...")
+    test_user_analytics_completeness()
+    print("✓ User analytics completeness test passed")
+    
+    print("\nRunning property-based test: User identity extraction consistency...")
+    test_user_identity_extraction_consistency_property_based()
+    print("✓ User identity extraction consistency property-based test passed")
+    
+    print("\nRunning property-based test: User analytics completeness...")
+    test_user_analytics_completeness_property_based()
+    print("✓ User analytics completeness property-based test passed")
+    
+    print("\nRunning property test: Unknown usage categorization...")
+    test_unknown_usage_categorization()
+    print("✓ Unknown usage categorization test passed")
+    
+    print("\nRunning property-based test: Unknown usage categorization...")
+    test_unknown_usage_categorization_property_based()
+    print("✓ Unknown usage categorization property-based test passed")
     
     print("\n✓ All tests passed!")

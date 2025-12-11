@@ -47,6 +47,7 @@ coverage.xml
 .idea/
 *.swp
 *.swo
+*.kiro/
 *~
 
 # OS

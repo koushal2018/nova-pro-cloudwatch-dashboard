@@ -1,9 +1,29 @@
 {
   "Statement": [
     {
+      "Sid": "DenyReplacementOfCriticalResources",
       "Effect": "Deny",
       "Principal": "*",
       "Action": "Update:Replace",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ResourceType": [
+            "AWS::CloudWatch::Dashboard",
+            "AWS::SNS::Topic",
+            "AWS::SNS::TopicPolicy",
+            "AWS::CloudWatch::Alarm",
+            "AWS::IAM::Role",
+            "AWS::IAM::ManagedPolicy"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "DenyDeletionOfCriticalResources",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "Update:Delete",
       "Resource": "*",
       "Condition": {
         "StringEquals": {
@@ -17,10 +37,28 @@
       }
     },
     {
+      "Sid": "AllowSafeUpdates",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": [
+        "Update:Modify",
+        "Update:*"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "AllowParameterUpdates",
       "Effect": "Allow",
       "Principal": "*",
       "Action": "Update:*",
-      "Resource": "*"
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "ResourceType": [
+            "AWS::CloudFormation::Stack"
+          ]
+        }
+      }
     }
   ]
 }

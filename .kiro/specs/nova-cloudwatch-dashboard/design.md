@@ -2,9 +2,9 @@
 
 ## Overview
 
-This design document outlines a comprehensive CloudWatch monitoring solution for Amazon Bedrock's Nova Pro Model, delivered as a CloudFormation template. The solution provides enterprise-grade observability for usage patterns, performance metrics, cost tracking, and operational health through a pre-configured dashboard that can be deployed in minutes.
+This design document outlines a comprehensive CloudWatch monitoring solution for Amazon Bedrock's Nova Pro Model, delivered as a CloudFormation template. The solution provides enterprise-grade observability for usage patterns, performance metrics, cost tracking, operational health, and user/application-level usage analytics through a pre-configured dashboard that can be deployed in minutes.
 
-The system leverages native AWS CloudWatch metrics published by Amazon Bedrock under the `AWS/Bedrock` namespace, organizing them into logical widget groups that address specific monitoring concerns for different stakeholder roles (operations, finance, reliability, security).
+The system leverages native AWS CloudWatch metrics published by Amazon Bedrock under the `AWS/Bedrock` namespace, combined with CloudWatch Logs Insights queries to extract user and application identification from request metadata. The solution organizes monitoring data into logical widget groups that address specific monitoring concerns for different stakeholder roles (operations, finance, reliability, security, and cost allocation).
 
 ## Architecture
 
@@ -12,10 +12,11 @@ The system leverages native AWS CloudWatch metrics published by Amazon Bedrock u
 
 The solution consists of a single CloudFormation template that provisions:
 
-1. **CloudWatch Dashboard**: Main visualization component with multiple widget sections
+1. **CloudWatch Dashboard**: Main visualization component with multiple widget sections including user/application analytics
 2. **CloudWatch Alarms**: Configurable threshold-based alerts for critical metrics
 3. **SNS Topic** (optional): Notification delivery mechanism for alarm triggers
-4. **IAM Permissions**: Least-privilege access policies for dashboard viewing
+4. **IAM Permissions**: Least-privilege access policies for dashboard viewing and log querying
+5. **CloudWatch Logs Insights Queries**: Automated queries to extract user and application identification from Bedrock request logs
 
 ### Component Interaction Flow
 
@@ -67,6 +68,10 @@ CloudFormation Template Deployment
 - `DailyCostThreshold` (Number): USD threshold for daily cost alarms (default: 1000)
 - `ThrottleRateThreshold` (Number): Percentage threshold for throttling alarms (default: 10)
 - `AlarmEmail` (String): Email address for alarm notifications (optional)
+- `UserIdentityField` (String): Metadata field name for user identification (default: "userId")
+- `ApplicationIdentityField` (String): Metadata field name for application identification (default: "applicationName")
+- `EnableUserTracking` (String): Enable user-level usage tracking (default: "true", allowed: "true", "false")
+- `EnableApplicationTracking` (String): Enable application-level usage tracking (default: "true", allowed: "true", "false")
 
 **Template Outputs:**
 - `DashboardURL`: Direct link to the created CloudWatch dashboard
@@ -168,6 +173,52 @@ The dashboard is organized into logical sections, each addressing specific monit
   - Metric: `FindingCounts` grouped by `GuardrailPolicyType` dimension
   - Time range: Last 24 hours
 
+#### Section 7: User Analytics (Seventh Row - Conditional)
+- **Widget 7.1**: Top Users by Invocations (Table widget)
+  - CloudWatch Logs Insights query extracting user identity from request metadata
+  - Shows top 10 users by invocation count over last 24 hours
+  - Conditional display based on EnableUserTracking parameter
+  
+- **Widget 7.2**: User Cost Distribution (Pie chart)
+  - CloudWatch Logs Insights query calculating cost per user
+  - Shows cost allocation across top users over last 7 days
+  - Conditional display based on EnableUserTracking parameter
+  
+- **Widget 7.3**: User Token Consumption (Stacked bar chart)
+  - CloudWatch Logs Insights query showing input/output tokens per user
+  - Time range: Last 24 hours
+  - Conditional display based on EnableUserTracking parameter
+
+#### Section 8: Application Analytics (Eighth Row - Conditional)
+- **Widget 8.1**: Top Applications by Invocations (Table widget)
+  - CloudWatch Logs Insights query extracting application identity from request metadata
+  - Shows top 10 applications by invocation count over last 24 hours
+  - Conditional display based on EnableApplicationTracking parameter
+  
+- **Widget 8.2**: Application Cost Distribution (Pie chart)
+  - CloudWatch Logs Insights query calculating cost per application
+  - Shows cost allocation across top applications over last 7 days
+  - Conditional display based on EnableApplicationTracking parameter
+  
+- **Widget 8.3**: Application Usage Trends (Line graph)
+  - CloudWatch Logs Insights query showing usage trends per application
+  - Time range: Last 7 days
+  - Conditional display based on EnableApplicationTracking parameter
+
+#### Section 9: Cost Allocation Summary (Ninth Row - Conditional)
+- **Widget 9.1**: Unknown Usage (Number widget)
+  - CloudWatch Logs Insights query counting requests without user/application identification
+  - Shows percentage of unattributed usage
+  - Time range: Last 24 hours
+  
+- **Widget 9.2**: Cost Allocation Coverage (Gauge widget)
+  - Calculated metric showing percentage of costs successfully allocated to users/applications
+  - Threshold markers for allocation quality (>90% good, 70-90% warning, <70% poor)
+  
+- **Widget 9.3**: Allocation Report Generator (Text widget)
+  - Instructions for generating downloadable cost allocation reports
+  - Links to CloudWatch Logs Insights queries for detailed reporting
+
 ### 3. CloudWatch Alarms
 
 **Alarm 1: High Error Rate**
@@ -206,6 +257,18 @@ Permissions:
 - cloudwatch:ListMetrics
 - logs:StartQuery
 - logs:GetQueryResults
+- logs:StopQuery
+- logs:DescribeLogGroups
+- logs:DescribeLogStreams
+- logs:FilterLogEvents
+```
+
+**Log Group Access** (Required for User/Application Analytics):
+```
+Resource Constraints:
+- logs:StartQuery: /aws/bedrock/modelinvocations/${ModelId}*
+- logs:GetQueryResults: *
+- logs:FilterLogEvents: /aws/bedrock/modelinvocations/${ModelId}*
 ```
 
 **Alarm Publisher Role** (Created automatically):
@@ -309,6 +372,48 @@ FindingCounts
 }
 ```
 
+### CloudWatch Logs Insights Query Structure
+
+**User Analytics Queries:**
+```sql
+-- Top Users by Invocations
+fields @timestamp, @message
+| filter @message like /modelInvocationInput/
+| parse @message /modelInvocationInput.*"metadata":\s*{[^}]*"${UserIdentityField}":\s*"(?<userId>[^"]+)"/
+| stats count() as invocations by userId
+| sort invocations desc
+| limit 10
+
+-- User Cost Calculation
+fields @timestamp, @message
+| filter @message like /modelInvocationInput/ or @message like /modelInvocationOutput/
+| parse @message /modelInvocationInput.*"metadata":\s*{[^}]*"${UserIdentityField}":\s*"(?<userId>[^"]+)"/
+| parse @message /"inputTokenCount":\s*(?<inputTokens>\d+)/
+| parse @message /"outputTokenCount":\s*(?<outputTokens>\d+)/
+| stats sum(inputTokens * 0.0008/1000 + outputTokens * 0.0032/1000) as cost by userId
+| sort cost desc
+```
+
+**Application Analytics Queries:**
+```sql
+-- Top Applications by Invocations
+fields @timestamp, @message
+| filter @message like /modelInvocationInput/
+| parse @message /modelInvocationInput.*"metadata":\s*{[^}]*"${ApplicationIdentityField}":\s*"(?<appName>[^"]+)"/
+| stats count() as invocations by appName
+| sort invocations desc
+| limit 10
+
+-- Application Usage Trends
+fields @timestamp, @message
+| filter @message like /modelInvocationInput/
+| parse @message /modelInvocationInput.*"metadata":\s*{[^}]*"${ApplicationIdentityField}":\s*"(?<appName>[^"]+)"/
+| bin(@timestamp, 1h) as hour
+| stats count() as invocations by hour, appName
+| sort hour desc
+```
+```
+
 ### Cost Calculation Model
 
 **Nova Pro Pricing (as of design - December 2025):**
@@ -380,6 +485,30 @@ After analyzing the acceptance criteria, most requirements are specific examples
 **Property 7: Alarm SNS integration**
 *For any* CloudWatch alarm resource in the template, if the AlarmEmail parameter is provided, the alarm should have an AlarmActions property referencing the SNS topic.
 **Validates: Requirements 10.5**
+
+**Property 8: User identity extraction consistency**
+*For any* CloudWatch Logs Insights query that extracts user identity, the query should use the UserIdentityField parameter value in the regex pattern for metadata field extraction.
+**Validates: Requirements 12.3**
+
+**Property 9: Application identity extraction consistency**
+*For any* CloudWatch Logs Insights query that extracts application identity, the query should use the ApplicationIdentityField parameter value in the regex pattern for metadata field extraction.
+**Validates: Requirements 12.4**
+
+**Property 10: User analytics completeness**
+*For any* user analytics widget that displays metrics, the underlying log query should return invocation count, token consumption, and cost calculation fields.
+**Validates: Requirements 11.3**
+
+**Property 11: Application analytics completeness**
+*For any* application analytics widget that displays metrics, the underlying log query should return invocation count, token consumption, and cost calculation fields.
+**Validates: Requirements 11.4**
+
+**Property 12: Unknown usage categorization**
+*For any* log query that processes requests without user or application metadata, those requests should be categorized separately from identified requests.
+**Validates: Requirements 11.5**
+
+**Property 13: Conditional widget display**
+*For any* user or application tracking widget, the widget should only be included in the dashboard when the corresponding EnableUserTracking or EnableApplicationTracking parameter is set to "true".
+**Validates: Requirements 12.5**
 
 ## Error Handling
 
@@ -508,6 +637,42 @@ Property-based tests will use `cfn-python-lint` and custom Python scripts with a
 - Test: When AlarmEmail parameter is set, verify AlarmActions references SNS topic
 - Validates: Alarms properly integrate with notification system
 
+**Property Test 8: User Identity Extraction Consistency**
+- **Feature: nova-cloudwatch-dashboard, Property 8: User identity extraction consistency**
+- Generator: Create log queries with various UserIdentityField parameter values
+- Test: Verify all user analytics queries use the parameter value in their regex patterns
+- Validates: User identity extraction adapts to configured field names
+
+**Property Test 9: Application Identity Extraction Consistency**
+- **Feature: nova-cloudwatch-dashboard, Property 9: Application identity extraction consistency**
+- Generator: Create log queries with various ApplicationIdentityField parameter values
+- Test: Verify all application analytics queries use the parameter value in their regex patterns
+- Validates: Application identity extraction adapts to configured field names
+
+**Property Test 10: User Analytics Completeness**
+- **Feature: nova-cloudwatch-dashboard, Property 10: User analytics completeness**
+- Generator: Parse user analytics log queries
+- Test: Verify queries return invocation count, token consumption, and cost fields
+- Validates: User analytics provide complete metric information
+
+**Property Test 11: Application Analytics Completeness**
+- **Feature: nova-cloudwatch-dashboard, Property 11: Application analytics completeness**
+- Generator: Parse application analytics log queries
+- Test: Verify queries return invocation count, token consumption, and cost fields
+- Validates: Application analytics provide complete metric information
+
+**Property Test 12: Unknown Usage Categorization**
+- **Feature: nova-cloudwatch-dashboard, Property 12: Unknown usage categorization**
+- Generator: Create log queries that handle missing metadata
+- Test: Verify requests without user/application data are categorized separately
+- Validates: Proper handling of unidentified usage
+
+**Property Test 13: Conditional Widget Display**
+- **Feature: nova-cloudwatch-dashboard, Property 13: Conditional widget display**
+- Generator: Parse dashboard JSON with different tracking parameter values
+- Test: Verify user/application widgets only appear when tracking is enabled
+- Validates: Dashboard adapts to tracking configuration
+
 ### Integration Testing
 
 **Deployment Tests:**
@@ -597,8 +762,8 @@ Property-based tests will use `cfn-python-lint` and custom Python scripts with a
 
 3. **Logs Permissions Too Broad**
    - Current: Access to all Bedrock model logs (`/aws/bedrock/modelinvocations*`)
-   - Risk: Access to other models' sensitive logs
-   - Fix: Scope to specific model (`/aws/bedrock/modelinvocations/${ModelId}*`)
+   - Risk: Access to other models' sensitive logs and potential PII exposure in user/application metadata
+   - Fix: Scope to specific model (`/aws/bedrock/modelinvocations/${ModelId}*`) and implement data filtering in log queries
 
 4. **Missing Resource Protection**
    - Current: Critical resources lack DeletionPolicy/UpdateReplacePolicy
@@ -801,6 +966,28 @@ aws sns set-topic-attributes \
 - Review IAM Access Analyzer findings
 - Update security policies based on lessons learned
 - Restore services with enhanced security controls
+
+### Data Privacy and User Tracking Considerations
+
+**PII Protection:**
+- User and application identifiers should not contain personally identifiable information
+- Log queries include field validation to prevent extraction of sensitive data
+- Dashboard widgets display only aggregated usage statistics, not individual request details
+
+**Data Retention:**
+- CloudWatch Logs retention follows AWS default policies (indefinite retention unless configured)
+- Organizations should configure appropriate log retention policies for compliance
+- User/application analytics respect log retention settings automatically
+
+**Access Control for Analytics:**
+- User and application analytics require additional CloudWatch Logs permissions
+- Access to usage analytics should be restricted to authorized personnel (finance, operations)
+- Consider separate IAM roles for general dashboard viewing vs. detailed usage analytics
+
+**Compliance Considerations:**
+- GDPR: User identifiers should be pseudonymized, not direct personal identifiers
+- HIPAA: Healthcare organizations should avoid including patient identifiers in metadata
+- SOX: Financial services should implement audit trails for cost allocation access
 
 ### Security Compliance Framework
 

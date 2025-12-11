@@ -12,6 +12,10 @@ This feature provides a comprehensive CloudWatch dashboard solution for enterpri
 - **TPM**: Tokens Per Minute - the rate of token consumption by the model
 - **Latency**: The time delay between request submission and response completion
 - **Enterprise**: The organization deploying and monitoring the Nova Pro Model
+- **User Identity**: The identifier of the individual or service account making requests to the Nova Pro Model, extracted from request metadata
+- **Application Identity**: The identifier of the application or service making requests to the Nova Pro Model, extracted from request metadata
+- **Request Metadata**: Additional information included with Bedrock API requests that can contain user and application identification fields
+- **Cost Allocation**: The process of attributing Nova Pro Model usage costs to specific users or applications for budget tracking and chargeback
 
 ## Requirements
 
@@ -135,3 +139,28 @@ This feature provides a comprehensive CloudWatch dashboard solution for enterpri
 3. WHEN cost thresholds are defined THEN the System SHALL create alarms for daily cost limits
 4. WHEN throttling occurs frequently THEN the System SHALL trigger alarms when throttling rate exceeds configurable thresholds
 5. WHEN alarms are configured THEN the System SHALL support SNS topic integration for notification delivery
+
+### Requirement 11
+
+**User Story:** As a financial controller, I want to track Nova Pro Model usage by user and application, so that I can allocate costs accurately and identify high-usage patterns for budget planning.
+
+#### Acceptance Criteria
+
+1. WHEN user identification is available in request metadata THEN the System SHALL display usage metrics segmented by user identity
+2. WHEN application identification is available in request metadata THEN the System SHALL display usage metrics segmented by application name
+3. WHEN displaying user-based metrics THEN the System SHALL show invocation count, token consumption, and cost per user over selectable time periods
+4. WHEN displaying application-based metrics THEN the System SHALL show invocation count, token consumption, and cost per application over selectable time periods
+5. WHEN user or application data is unavailable THEN the System SHALL categorize usage as "Unknown" and display it separately
+6. WHEN cost allocation is calculated THEN the System SHALL provide downloadable reports showing cost breakdown by user and application
+
+### Requirement 12
+
+**User Story:** As an enterprise administrator, I want to configure user and application tracking parameters, so that I can customize the dashboard to match our organization's identity and application naming conventions.
+
+#### Acceptance Criteria
+
+1. WHEN deploying the CloudFormation template THEN the System SHALL accept parameters for user identification metadata field names
+2. WHEN deploying the CloudFormation template THEN the System SHALL accept parameters for application identification metadata field names
+3. WHEN user identification fields are configured THEN the System SHALL extract user identity from the specified metadata fields in Bedrock request logs
+4. WHEN application identification fields are configured THEN the System SHALL extract application identity from the specified metadata fields in Bedrock request logs
+5. WHEN identification fields are not configured THEN the System SHALL disable user and application tracking widgets and display a configuration message
