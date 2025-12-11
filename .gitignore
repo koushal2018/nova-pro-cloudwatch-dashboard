@@ -2,7 +2,6 @@
 *.template
 cfn-lint.log
 stack-outputs.json
-parameters.json
 
 # Python
 __pycache__/
@@ -47,8 +46,10 @@ coverage.xml
 .idea/
 *.swp
 *.swo
-*.kiro/
 *~
+
+# Kiro (AI development tool)
+.kiro/
 
 # OS
 .DS_Store
@@ -92,6 +93,20 @@ deployment-outputs.json
 local-parameters.json
 test-stack-*
 dev-stack-*
+parameters-*.json
+!parameters.example.json
+
+# Development artifacts
+TASK_*.md
+*_REPORT.md
+*_report*.txt
+registered_agents.json
+task_agent_mapping.json
+CLAUDE.md
+
+# Internal documentation (not for distribution)
+iam-commands.md
+stack-update-test-report.md
 
 # Documentation builds
 docs/_build/

@@ -5,10 +5,11 @@
 
 set -e
 
-ROLE_NAME="Bedrockcloudwatchlogs"
-POLICY_NAME="BedrockCloudWatchLogsAccess"
-ACCOUNT_ID="401552979575"
-REGION="us-west-2"
+# Configuration - modify these values for your environment
+ROLE_NAME="${BEDROCK_ROLE_NAME:-Bedrockcloudwatchlogs}"
+POLICY_NAME="${BEDROCK_POLICY_NAME:-BedrockCloudWatchLogsAccess}"
+ACCOUNT_ID="${AWS_ACCOUNT_ID:-$(aws sts get-caller-identity --query Account --output text)}"
+REGION="${AWS_REGION:-us-east-1}"
 
 echo "🔍 Checking if role '$ROLE_NAME' exists..."
 

@@ -1,6 +1,10 @@
 # Contributing to Nova Pro CloudWatch Dashboard
 
-Thank you for your interest in contributing to the Nova Pro CloudWatch Dashboard project! This document provides guidelines and information for contributors.
+Thank you for your interest in contributing to the Nova Pro CloudWatch Dashboard project!
+
+> **Note**: This is a personal open-source project maintained in my spare time. While I welcome contributions, please be patient with response times on issues and pull requests.
+
+This document provides guidelines and information for contributors.
 
 ## 🚀 Getting Started
 
@@ -248,7 +252,7 @@ Include:
 ### Security Issues
 
 **Do not** create public issues for security vulnerabilities. Instead:
-1. Email security concerns to maintainers
+1. Open a private security advisory on GitHub
 2. Provide detailed vulnerability description
 3. Include proof of concept (if safe)
 4. Allow time for responsible disclosure
@@ -256,6 +260,8 @@ Include:
 ## 🤝 Community Guidelines
 
 ### Code of Conduct
+
+Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
 - Be respectful and inclusive
 - Focus on constructive feedback
@@ -269,28 +275,7 @@ Include:
 - Provide context and details when asking for help
 - Be patient with response times
 
-## 📊 Metrics and Monitoring
-
-### Contribution Metrics
-
-We track:
-- Code quality improvements
-- Test coverage increases
-- Documentation completeness
-- Security enhancements
-- Performance optimizations
-
-### Recognition
-
-Contributors are recognized through:
-- GitHub contributor graphs
-- Release notes acknowledgments
-- Community highlights
-- Maintainer nominations
-
-## 🔄 Release Process
-
-### Versioning
+## 🔄 Versioning
 
 We follow semantic versioning (SemVer):
 - `MAJOR.MINOR.PATCH`
@@ -298,10 +283,6 @@ We follow semantic versioning (SemVer):
 - Minor: New features (backward compatible)
 - Patch: Bug fixes (backward compatible)
 
-### Release Cycle
+---
 
-- **Patch releases**: As needed for critical fixes
-- **Minor releases**: Monthly for new features
-- **Major releases**: Quarterly for significant changes
-
-Thank you for contributing to Nova Pro CloudWatch Dashboard! 🎉
+Thank you for contributing to Nova Pro CloudWatch Dashboard!

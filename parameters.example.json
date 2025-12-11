@@ -5,7 +5,7 @@
   },
   {
     "ParameterKey": "DashboardName",
-    "ParameterValue": "NovaProMonitoring-Updated"
+    "ParameterValue": "NovaProMonitoring"
   },
   {
     "ParameterKey": "ModelId",
@@ -13,30 +13,34 @@
   },
   {
     "ParameterKey": "ErrorRateThreshold",
-    "ParameterValue": "8"
+    "ParameterValue": "5"
   },
   {
     "ParameterKey": "P99LatencyThreshold",
-    "ParameterValue": "6000"
+    "ParameterValue": "5000"
   },
   {
     "ParameterKey": "DailyCostThreshold",
-    "ParameterValue": "1500"
+    "ParameterValue": "1000"
   },
   {
     "ParameterKey": "ThrottleRateThreshold",
-    "ParameterValue": "15"
+    "ParameterValue": "10"
+  },
+  {
+    "ParameterKey": "AlarmEmail",
+    "ParameterValue": "your-email@example.com"
   },
   {
     "ParameterKey": "Environment",
-    "ParameterValue": "test"
+    "ParameterValue": "production"
   },
   {
     "ParameterKey": "Owner",
-    "ParameterValue": "TestTeam-Updated"
+    "ParameterValue": "YourTeam"
   },
   {
     "ParameterKey": "CostCenter",
-    "ParameterValue": "AI-Testing-Updated"
+    "ParameterValue": "YourCostCenter"
   }
 ]

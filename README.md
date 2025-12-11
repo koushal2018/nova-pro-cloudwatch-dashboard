@@ -1,5 +1,7 @@
 # Nova Pro CloudWatch Dashboard
 
+> **Disclaimer**: This is a personal open-source project and is **NOT** affiliated with, endorsed by, or sponsored by Amazon Web Services (AWS) or any of its subsidiaries. The author created this project independently to help the community monitor their Bedrock Nova Pro usage.
+
 A comprehensive CloudFormation-based monitoring solution for Amazon Bedrock's Nova Pro foundation model. Provides enterprise-grade observability for AI workload operations through pre-configured CloudWatch dashboards.
 
 ## 🚀 Quick Start
@@ -196,10 +198,7 @@ echo "Incident resolved. Updated security controls verified." >> incident-$(date
 ## 📚 Documentation
 
 - [Deployment Guide](DEPLOYMENT.md) - Production deployment checklist and security hardening
-- [Design Document](.kiro/specs/nova-cloudwatch-dashboard/design.md) - Architecture and technical design
-- [Requirements](.kiro/specs/nova-cloudwatch-dashboard/requirements.md) - User stories and acceptance criteria
-- [Implementation Tasks](.kiro/specs/nova-cloudwatch-dashboard/tasks.md) - Development checklist
-- [Security Architecture](.kiro/specs/nova-cloudwatch-dashboard/design.md#security-considerations) - Security controls and incident response
+- [Contributing Guide](CONTRIBUTING.md) - How to contribute to this project
 
 ## 🤝 Contributing
 
@@ -214,19 +213,24 @@ echo "Incident resolved. Updated security controls verified." >> incident-$(date
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🏷️ Tags
-
-`aws` `cloudformation` `cloudwatch` `bedrock` `nova-pro` `monitoring` `dashboard` `infrastructure-as-code` `observability` `ai-monitoring`
-
 ## 📞 Support
 
 - Create an [Issue](../../issues) for bug reports or feature requests
 - Check [Deployment Guide](DEPLOYMENT.md) for troubleshooting
 - Review [Security Recommendations](DEPLOYMENT.md#security-best-practices) for production deployment
-- For security incidents, follow [Incident Response](#-incident-response) procedures
-- Run [Security Validation](#-security-validation) tests before production deployment
+
+## ⚠️ Disclaimer
+
+This project is provided "as is" without warranty of any kind. This is a personal project created by the author and is:
+
+- **NOT** an official AWS product or service
+- **NOT** affiliated with, endorsed by, or sponsored by Amazon Web Services
+- **NOT** supported by AWS Support
+
+Use at your own risk. Always review CloudFormation templates before deploying to your AWS account.
 
 ---
 
-**Version**: 1.0.0 (December 2025)  
+**Author**: Koushal Dalal
+**Version**: 1.0.0 (December 2025)
 **Pricing Update**: December 2025 (Nova Pro pricing embedded in cost calculations)
