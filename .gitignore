@@ -1,7 +1,44 @@
-# AWS CloudFormation
-*.template
-cfn-lint.log
-stack-outputs.json
+# AWS and CloudFormation
+*.pem
+*.key
+.aws/
+aws-exports.js
+
+# Environment and Configuration
+.env
+.env.local
+.env.production
+config.json
+secrets.json
+
+# IDE and Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS Generated
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime and Cache
+node_modules/
+.npm
+.cache/
+*.tgz
 
 # Python
 __pycache__/
@@ -21,130 +58,56 @@ parts/
 sdist/
 var/
 wheels/
-pip-wheel-metadata/
-share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-MANIFEST
 
 # Testing
-.pytest_cache/
 .coverage
-htmlcov/
+.pytest_cache/
 .tox/
-.nox/
-.cache
-nosetests.xml
 coverage.xml
 *.cover
-*.py,cover
 .hypothesis/
 
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Documentation Build
+docs/_build/
+site/
 
-# Kiro (AI development tool)
-.kiro/
-
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Logs
-*.log
-logs/
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-
-# AWS credentials (never commit these!)
-.aws/
-aws-credentials.json
-credentials.json
-
-# Temporary files
-tmp/
-temp/
+# Temporary Files
 *.tmp
 *.temp
+temp/
+tmp/
 
-# Backup files
+# Backup Files
 *.bak
 *.backup
 *~
 
-# CloudFormation stack outputs
-stack-outputs-*.json
+# CloudFormation Stack Outputs
+stack-outputs.json
 deployment-outputs.json
 
-# Local development
-local-parameters.json
-test-stack-*
-dev-stack-*
-parameters-*.json
-!parameters.example.json
+# Local Development
+local-*
+test-*
+dev-*
 
-# Development artifacts
-TASK_*.md
-*_REPORT.md
-*_report*.txt
-registered_agents.json
-task_agent_mapping.json
-CLAUDE.md
+# Sensitive Data (even though it shouldn't be here)
+*password*
+*secret*
+*token*
+*key*
+credentials*
 
-# Internal documentation (not for distribution)
-iam-commands.md
-stack-update-test-report.md
+# Custom Parameters (may contain sensitive info)
+parameters-prod.json
+parameters-staging.json
+parameters-dev.json
+my-parameters.json
+custom-parameters.json
 
-# Documentation builds
-docs/_build/
-site/
-
-# Jupyter Notebooks
-.ipynb_checkpoints
-
-# pyenv
-.python-version
-
-# pipenv
-Pipfile.lock
-
-# PEP 582
-__pypackages__/
-
-# Celery
-celerybeat-schedule
-celerybeat.pid
-
-# SageMath parsed files
-*.sage.py
-
-# Spyder project settings
-.spyderproject
-.spyproject
-
-# Rope project settings
-.ropeproject
-
-# mkdocs documentation
-/site
-
-# mypy
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# Pyre type checker
-.pyre/
+# Generated Files
+generated/
+auto-generated/

@@ -1,236 +1,226 @@
-# Nova Pro CloudWatch Dashboard
+# Amazon Bedrock Nova Pro CloudWatch Dashboard
 
-> **Disclaimer**: This is a personal open-source project and is **NOT** affiliated with, endorsed by, or sponsored by Amazon Web Services (AWS) or any of its subsidiaries. The author created this project independently to help the community monitor their Bedrock Nova Pro usage.
+A comprehensive CloudWatch dashboard template for monitoring Amazon Bedrock Nova Pro model usage, performance, costs, and guardrail interventions.
 
-A comprehensive CloudFormation-based monitoring solution for Amazon Bedrock's Nova Pro foundation model. Provides enterprise-grade observability for AI workload operations through pre-configured CloudWatch dashboards.
+![Dashboard Preview](https://img.shields.io/badge/AWS-CloudFormation-orange) ![License](https://img.shields.io/badge/License-MIT-blue) ![Version](https://img.shields.io/badge/Version-1.0.0-green)
+
+## 🎯 Overview
+
+This CloudFormation template creates a production-ready monitoring dashboard for Amazon Bedrock Nova Pro models, providing:
+
+- **Real-time Usage Metrics** - Invocations, TPM, concurrent requests
+- **Cost Analytics** - Daily costs, cost per request, token cost breakdown  
+- **Performance Monitoring** - Latency percentiles, cache efficiency
+- **Error Tracking** - Error rates, error breakdown, recent errors
+- **Guardrail Analytics** - Intervention rates and types
+- **User/Application Tracking** - Usage analytics by user and application
 
 ## 🚀 Quick Start
 
-Deploy the monitoring dashboard in minutes:
+### Prerequisites
+- AWS Account with Bedrock Nova Pro access
+- CloudFormation deployment permissions
+- IAM role with required permissions (see [IAM Requirements](#iam-requirements))
 
+### Deploy via AWS Console
+1. **Download** the template: [`nova-pro-dashboard-compact.yaml`](nova-pro-dashboard-compact.yaml)
+2. **Go to** CloudFormation Console → Create Stack
+3. **Upload** the template file
+4. **Configure** parameters (see [Parameters](#parameters))
+5. **Deploy** and wait for completion
+
+### Deploy via AWS CLI
 ```bash
 aws cloudformation create-stack \
   --stack-name nova-pro-dashboard \
-  --template-body file://nova-pro-dashboard-template.yaml \
-  --parameters ParameterKey=MonitoringRegion,ParameterValue=us-east-1 \
-             ParameterKey=AlarmEmail,ParameterValue=alerts@company.com \
-  --capabilities CAPABILITY_NAMED_IAM \
-  --enable-termination-protection
+  --template-body file://nova-pro-dashboard-compact.yaml \
+  --parameters file://parameters.example.json \
+  --region us-east-1
 ```
 
-## 📊 Features
+## 📋 Parameters
 
-- **Real-time Usage Monitoring**: Track invocations, TPM (tokens per minute), and request patterns
-- **Cost Tracking**: Monitor daily costs with cache efficiency analysis (December 2025 pricing)
-- **Performance Metrics**: Latency percentiles, error rates, and throughput monitoring
-- **Guardrail Compliance**: Content safety intervention tracking and reporting
-- **Operational Alerts**: Pre-configured CloudWatch alarms with SNS notifications
-- **Security**: Least-privilege IAM roles and encrypted SNS topics
+| Parameter | Description | Default | Required |
+|-----------|-------------|---------|----------|
+| `DashboardName` | Name for the CloudWatch dashboard | `NovaProMonitoring` | Yes |
+| `MonitoringRegion` | AWS region for monitoring | - | Yes |
+| `ModelId` | Bedrock Nova Pro model ID | `amazon.nova-pro-v1:0` | Yes |
+| `AlarmEmail` | Email for alarm notifications | (empty) | No |
+| `Environment` | Environment tag | `prod` | Yes |
+| `Owner` | Owner tag | `DevOps` | Yes |
+| `CostCenter` | Cost center tag | `AI-OPERATIONS` | Yes |
 
-## 🏗️ Architecture
+## 🔑 IAM Requirements
 
-The solution deploys:
-- **CloudWatch Dashboard**: 42 widgets across 7 monitoring sections
-- **CloudWatch Alarms**: 4 configurable threshold-based alerts
-- **SNS Integration**: Optional email notifications for alarm triggers
-- **IAM Permissions**: Read-only dashboard viewer role with scoped access
+Add this policy to your IAM role to access the dashboard:
 
-## 📋 Prerequisites
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "cloudwatch:GetDashboard",
+        "cloudwatch:ListDashboards",
+        "cloudwatch:GetMetricData",
+        "cloudwatch:GetMetricStatistics",
+        "cloudwatch:ListMetrics"
+      ],
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "cloudwatch:namespace": ["AWS/Bedrock", "AWS/Bedrock/Guardrails"]
+        }
+      }
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "logs:StartQuery",
+        "logs:GetQueryResults",
+        "logs:StopQuery",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams",
+        "logs:FilterLogEvents"
+      ],
+      "Resource": [
+        "arn:aws:logs:*:*:log-group:/aws/bedrock/modelinvocations/amazon.nova-pro-v1:0*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "bedrock:GetModelInvocationLoggingConfiguration",
+        "bedrock:ListFoundationModels"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
 
-- AWS account with Amazon Bedrock access
-- Nova Pro model available in target region
-- IAM permissions for CloudFormation, CloudWatch, SNS, IAM
-- AWS CLI configured (for deployment)
+## 📊 What's Included
 
-## 🔧 Configuration
+### Resources Created
+- **CloudWatch Dashboard** - Comprehensive monitoring dashboard
+- **CloudWatch Alarms** - 4 pre-configured alarms for key metrics
+- **SNS Topic** - For alarm notifications (optional)
+- **SNS Subscription** - Email notifications (optional)
 
-### Required Parameters
-- `MonitoringRegion`: AWS region where Nova Pro metrics are monitored
+### Dashboard Widgets
+- Usage metrics (invocations, TPM, concurrent requests)
+- Cost analysis (daily costs, cost per request, token breakdown)
+- Performance metrics (latency percentiles, cache efficiency)
+- Error monitoring (error rates, recent errors, success vs failed)
+- Guardrail analytics (intervention rates and types)
+- User/application tracking (requires metadata in requests)
 
-### Optional Parameters (with defaults)
-- `DashboardName`: "NovaProMonitoring"
-- `ModelId`: "amazon.nova-pro-v1:0"
-- `ErrorRateThreshold`: 5%
-- `P99LatencyThreshold`: 5000ms
-- `DailyCostThreshold`: $1000
-- `ThrottleRateThreshold`: 10%
-- `AlarmEmail`: "" (optional email for notifications)
+### Alarms Configured
+1. **High Error Rate** - Triggers when error rate > 5%
+2. **High P99 Latency** - Triggers when P99 latency > 5000ms
+3. **Daily Cost Limit** - Triggers when daily cost > $1000
+4. **High Throttling Rate** - Triggers when throttling > 10%
 
-## 📈 Dashboard Sections
+## 🛠️ Advanced Configuration
 
-1. **Usage Overview**: Total invocations, requests/min, service TPM, customer TPM
-2. **Cost Tracking**: Daily cost estimation, cost per request, token cost breakdown, cache efficiency
-3. **Performance**: Latency percentiles, latency comparisons, request size correlation
-4. **Error Monitoring**: Error rate gauge, error breakdown, recent error logs
-5. **Invocation Patterns**: Success vs failed ratio, token distribution, concurrent invocations
-6. **Guardrails**: Intervention tracking, intervention rates, policy type breakdown
+### Enable Bedrock Logging
+For detailed analytics, enable model invocation logging:
+
+```bash
+aws bedrock put-model-invocation-logging-configuration \
+  --logging-config '{
+    "cloudWatchConfig": {
+      "logGroupName": "/aws/bedrock/modelinvocations",
+      "roleArn": "arn:aws:iam::ACCOUNT:role/service-role/AmazonBedrockExecutionRoleForModelInvocationLogging"
+    },
+    "textDataDeliveryEnabled": true
+  }'
+```
+
+### User/Application Tracking
+To enable user and application analytics, include metadata in your Bedrock requests:
+
+```json
+{
+  "metadata": {
+    "userId": "john.doe",
+    "applicationName": "chatbot"
+  }
+}
+```
 
 ## 💰 Cost Estimate
 
-- CloudWatch Dashboard: $3.00/month
-- CloudWatch Alarms: $0.40/month (4 alarms)
-- SNS Notifications: $0.00 (first 1,000 free)
-- **Total Infrastructure**: ~$3.40/month (excluding Nova Pro usage)
+- **Dashboard**: ~$3/month
+- **Alarms**: ~$0.40/month (4 alarms × $0.10)
+- **SNS**: ~$0.50/month (notifications)
+- **Total**: ~$4/month
 
-## 🔒 Security
+## 🔧 Troubleshooting
 
-- Least-privilege IAM policies scoped to Bedrock metrics
-- KMS-encrypted SNS topics
-- No public dashboard access (IAM authentication required)
-- Resource protection policies prevent accidental deletion
+### Common Issues
 
-## 🧪 Testing
+#### "Resource Already Exists" Error
+If you get conflicts with existing resources:
+1. Use different names in parameters (e.g., `DashboardName: NovaProMonitoring-v2`)
+2. Or delete existing resources first
 
-Run property-based tests to validate template correctness:
+#### Dashboard Not Loading
+- Verify IAM permissions are added to your role
+- Check you're in the correct AWS region
+- Confirm dashboard name matches deployment
 
-```bash
-python test_template_properties.py
-```
+#### Metrics Not Showing
+- Enable Bedrock model invocation logging
+- Verify namespace conditions in IAM policy
 
-Validate CloudFormation template:
-
-```bash
-cfn-lint nova-pro-dashboard-template.yaml
-aws cloudformation validate-template --template-body file://nova-pro-dashboard-template.yaml
-```
-
-## 🔐 Security Validation
-
-Run security validation tests to verify hardening measures:
-
-```bash
-# Run comprehensive security validation
-python -c "
-from test_template_properties import *
-test_iam_trust_policy_restrictions()
-test_cloudwatch_permission_region_scoping()
-test_logs_permission_model_scoping()
-test_resource_protection_policies()
-test_sns_topic_access_policy()
-print('All security validations passed!')
-"
-
-# Validate IAM policies with AWS IAM Policy Simulator
-aws iam simulate-principal-policy \
-  --policy-source-arn arn:aws:iam::ACCOUNT:role/DASHBOARD-ViewerRole \
-  --action-names cloudwatch:GetDashboard \
-  --resource-arns arn:aws:cloudwatch:REGION:ACCOUNT:dashboard/DASHBOARD
-
-# Check for security findings with AWS Config (if enabled)
-aws configservice get-compliance-details-by-config-rule \
-  --config-rule-name iam-role-managed-policy-check
-
-# Scan for security issues with AWS Security Hub (if enabled)
-aws securityhub get-findings \
-  --filters '{"ResourceId":[{"Value":"STACK-NAME","Comparison":"EQUALS"}]}'
-```
-
-## 🚨 Incident Response
-
-### Security Event Detection
-
-Monitor for these security events:
-
-```bash
-# CloudTrail: Unusual IAM role assumptions
-aws logs filter-log-events \
-  --log-group-name CloudTrail/SecurityEvents \
-  --filter-pattern '{ $.eventName = "AssumeRole" && $.sourceIPAddress != "EXPECTED_IP" }'
-
-# CloudWatch: Suspicious metric access patterns
-aws logs filter-log-events \
-  --log-group-name /aws/cloudwatch/api \
-  --filter-pattern '{ $.eventName = "GetMetricData" && $.errorCode exists }'
-
-# Config: Unauthorized resource changes
-aws configservice get-compliance-details-by-config-rule \
-  --config-rule-name cloudformation-stack-drift-detection-check
-```
-
-### Emergency Response Actions
-
-If security breach detected:
-
-```bash
-# 1. Immediately disable the IAM role
-aws iam attach-role-policy \
-  --role-name DASHBOARD-ViewerRole \
-  --policy-arn arn:aws:iam::aws:policy/AWSDenyAll
-
-# 2. Isolate SNS topic (if compromised)
-aws sns set-topic-attributes \
-  --topic-arn arn:aws:sns:REGION:ACCOUNT:TOPIC \
-  --attribute-name Policy \
-  --attribute-value '{"Statement":[{"Effect":"Deny","Principal":"*","Action":"*"}]}'
-
-# 3. Enable detailed CloudTrail logging
-aws cloudtrail put-event-selectors \
-  --trail-name SecurityAuditTrail \
-  --event-selectors ReadWriteType=All,IncludeManagementEvents=true
-
-# 4. Create security incident ticket
-echo "Security incident detected at $(date)" > incident-$(date +%Y%m%d-%H%M%S).log
-```
-
-### Recovery Procedures
-
-After incident resolution:
-
-```bash
-# 1. Restore IAM role with updated trust policy
-aws iam detach-role-policy \
-  --role-name DASHBOARD-ViewerRole \
-  --policy-arn arn:aws:iam::aws:policy/AWSDenyAll
-
-# 2. Update stack with enhanced security
-aws cloudformation update-stack \
-  --stack-name nova-pro-dashboard \
-  --template-body file://nova-pro-dashboard-template.yaml \
-  --capabilities CAPABILITY_NAMED_IAM
-
-# 3. Verify security controls
-python -c "from test_template_properties import *; test_security_validation_property_based()"
-
-# 4. Document lessons learned
-echo "Incident resolved. Updated security controls verified." >> incident-$(date +%Y%m%d-%H%M%S).log
-```
+See [Console Deployment Guide](docs/CONSOLE_DEPLOYMENT_GUIDE.md) for detailed troubleshooting.
 
 ## 📚 Documentation
 
-- [Deployment Guide](DEPLOYMENT.md) - Production deployment checklist and security hardening
-- [Contributing Guide](CONTRIBUTING.md) - How to contribute to this project
+- [Console Deployment Guide](docs/CONSOLE_DEPLOYMENT_GUIDE.md) - Step-by-step AWS Console instructions
+- [IAM Requirements](docs/CUSTOMER_IAM_REQUIREMENTS.md) - Detailed IAM policy requirements
+- [Production Deployment](docs/PRODUCTION_DEPLOYMENT_GUIDE.md) - Production deployment best practices
+- [Troubleshooting](docs/TROUBLESHOOTING.md) - Common issues and solutions
+
+## 🛡️ Security
+
+- **Least Privilege**: IAM policies grant minimum required permissions
+- **Resource Scoped**: Access limited to specific dashboards and log groups
+- **Namespace Restricted**: CloudWatch metrics limited to Bedrock only
+- **Encryption**: SNS topics encrypted with AWS managed keys
+- **Deletion Protection**: Critical resources protected from accidental deletion
+
+## 🌍 Supported Regions
+
+- `us-east-1` (US East - N. Virginia)
+- `us-west-2` (US West - Oregon)
+- `eu-west-1` (Europe - Ireland)
+- `eu-central-1` (Europe - Frankfurt)
+- `ap-southeast-1` (Asia Pacific - Singapore)
+- `ap-northeast-1` (Asia Pacific - Tokyo)
+- `ca-central-1` (Canada - Central)
+- `me-central-1` (Middle East - UAE)
 
 ## 🤝 Contributing
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Run tests (`python test_template_properties.py`)
-4. Commit changes (`git commit -m 'Add amazing feature'`)
-5. Push to branch (`git push origin feature/amazing-feature`)
-6. Open a Pull Request
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
+## 🏷️ Tags
+
+`aws` `cloudformation` `bedrock` `nova-pro` `monitoring` `cloudwatch` `dashboard` `observability` `ai` `ml`
+
 ## 📞 Support
 
-- Create an [Issue](../../issues) for bug reports or feature requests
-- Check [Deployment Guide](DEPLOYMENT.md) for troubleshooting
-- Review [Security Recommendations](DEPLOYMENT.md#security-best-practices) for production deployment
-
-## ⚠️ Disclaimer
-
-This project is provided "as is" without warranty of any kind. This is a personal project created by the author and is:
-
-- **NOT** an official AWS product or service
-- **NOT** affiliated with, endorsed by, or sponsored by Amazon Web Services
-- **NOT** supported by AWS Support
-
-Use at your own risk. Always review CloudFormation templates before deploying to your AWS account.
+- **Issues**: [GitHub Issues](https://github.com/your-org/nova-pro-dashboard/issues)
+- **Documentation**: [Wiki](https://github.com/your-org/nova-pro-dashboard/wiki)
+- **Discussions**: [GitHub Discussions](https://github.com/your-org/nova-pro-dashboard/discussions)
 
 ---
 
-**Author**: Koushal Dutt
-**Version**: 1.0.0 (December 2025)
-**Pricing Update**: December 2025 (Nova Pro pricing embedded in cost calculations)
+**Made with ❤️ for the AWS Community**

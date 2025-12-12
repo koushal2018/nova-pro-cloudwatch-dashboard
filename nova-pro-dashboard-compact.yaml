@@ -1,101 +1,5 @@
 
 
-# ============================================================================
-# Nova Pro CloudWatch Dashboard - CloudFormation Template
-# ============================================================================
-#
-# OVERVIEW:
-# This CloudFormation template creates a comprehensive monitoring solution for
-# Amazon Bedrock's Nova Pro Model. It provides enterprise-grade observability
-# through a pre-configured CloudWatch dashboard with real-time metrics, cost
-# tracking, performance monitoring, and operational alerting.
-#
-# FEATURES:
-# - Real-time usage metrics (invocations, TPM, token distribution)
-# - Cost tracking with cache efficiency analysis (December 2025 pricing)
-# - Performance monitoring (latency percentiles, error rates)
-# - Guardrail intervention tracking for content safety compliance
-# - Pre-configured CloudWatch alarms with SNS notifications
-# - Least-privilege IAM roles for secure dashboard access
-#
-# DEPLOYMENT INSTRUCTIONS:
-#
-# 1. Prerequisites:
-#    - AWS account with Amazon Bedrock access in target region
-#    - IAM permissions for CloudFormation, CloudWatch, SNS, IAM
-#    - Nova Pro model available in the monitoring region
-#
-# 2. Quick Deploy (AWS CLI):
-#    aws cloudformation create-stack \
-#      --stack-name nova-pro-dashboard \
-#      --template-body file://nova-pro-dashboard-template.yaml \
-#      --parameters ParameterKey=MonitoringRegion,ParameterValue=us-east-1 \
-#                   ParameterKey=AlarmEmail,ParameterValue=alerts@company.com \
-#      --capabilities CAPABILITY_NAMED_IAM \
-#      --enable-termination-protection
-#
-# 3. Production Deploy (with comprehensive rollback protection):
-#    aws cloudformation create-stack \
-#      --stack-name nova-pro-dashboard \
-#      --template-body file://nova-pro-dashboard-template.yaml \
-#      --parameters file://parameters.json \
-#      --capabilities CAPABILITY_NAMED_IAM \
-#      --stack-policy-body file://stack-policy.json \
-#      --enable-termination-protection \
-#      --rollback-configuration RollbackTriggers='[
-#        {Arn=arn:aws:cloudwatch:REGION:ACCOUNT:alarm:DASHBOARD-HighErrorRate,Type=AWS::CloudWatch::Alarm},
-#        {Arn=arn:aws:cloudwatch:REGION:ACCOUNT:alarm:DASHBOARD-HighP99Latency,Type=AWS::CloudWatch::Alarm}
-#      ]',MonitoringTimeInMinutes=10
-#
-# 4. Update Stack:
-#    aws cloudformation update-stack \
-#      --stack-name nova-pro-dashboard \
-#      --template-body file://nova-pro-dashboard-template.yaml \
-#      --parameters file://parameters.json \
-#      --capabilities CAPABILITY_NAMED_IAM
-#
-# COST CONSIDERATIONS:
-# - CloudWatch Dashboard: $3.00/month per dashboard
-# - CloudWatch Alarms: $0.10/month per standard alarm (4 alarms = $0.40/month)
-# - SNS Topic: $0.50 per 1 million requests (notifications only)
-# - Nova Pro Model Usage: See pricing in dashboard cost calculations
-# - Total Infrastructure Cost: ~$3.40/month (excluding model usage)
-#
-# SERVICE QUOTAS TO MONITOR:
-# - CloudWatch Dashboards: 500 per region (this template creates 1)
-# - CloudWatch Alarms: 10,000 per region (this template creates 4)
-# - SNS Topics: 100,000 per region (this template creates 0-1)
-# - IAM Roles: 1,000 per account (this template creates 1)
-# - IAM Managed Policies: 1,500 per account (this template creates 1)
-#
-# CUSTOMIZATION:
-# - Modify alarm thresholds via parameters
-# - Add custom metrics by extending dashboard JSON
-# - Adjust widget layouts by changing x,y coordinates
-# - Add additional notification channels via SNS subscriptions
-#
-# TROUBLESHOOTING:
-# - No data in widgets: Ensure Nova Pro model has been invoked in the region
-# - Missing guardrail data: Configure guardrails in Bedrock console
-# - Alarm false positives: Adjust thresholds or evaluation periods
-# - Cost discrepancies: Update pricing constants (see cost calculation comments)
-#
-# SECURITY NOTES:
-# - Uses least-privilege IAM policies scoped to Bedrock metrics
-# - SNS topic encrypted with AWS managed KMS key
-# - Dashboard requires IAM authentication (no public access)
-# - Use DashboardViewerRole for read-only access
-#
-# MAINTENANCE:
-# - Update pricing constants when Nova Pro pricing changes
-# - Review alarm thresholds quarterly based on usage patterns
-# - Monitor CloudWatch costs and optimize widget refresh rates if needed
-# - Enable drift detection to track configuration changes
-#
-# VERSION: 1.0.0 (December 2025)
-# PRICING UPDATE: December 2025 (Nova Pro pricing embedded in cost calculations)
-# ============================================================================
-
 AWSTemplateFormatVersion: '2010-09-09'
 
 Description: >
@@ -119,8 +23,6 @@ Metadata:
               - "AWS::CloudWatch::Dashboard"
               - "AWS::SNS::Topic"
               - "AWS::CloudWatch::Alarm"
-              - "AWS::IAM::Role"
-              - "AWS::IAM::ManagedPolicy"
       - Effect: Allow
         Principal: "*"
         Action: "Update:*"
@@ -198,13 +100,6 @@ Parameters:
   # Required Parameters
   # 
   # AWS-SPECIFIC PARAMETER TYPES ANALYSIS:
-  # After review, this template correctly uses generic types where appropriate:
-  # - MonitoringRegion: String with AllowedValues provides better validation than AWS-specific types
-  #   for Bedrock-specific region constraints (not all AWS regions support Nova Pro)
-  # - ModelId: No AWS-specific type exists for Bedrock model identifiers
-  # - AlarmEmail: No AWS-specific type for email addresses; regex validation is optimal
-  # - Other parameters: Appropriately use String/Number types with custom validation
-  #
   MonitoringRegion:
     Type: String
     Description: >
@@ -219,6 +114,7 @@ Parameters:
       - ap-southeast-1
       - ap-northeast-1
       - ca-central-1
+      - me-central-1
     ConstraintDescription: Must select a region where Amazon Bedrock Nova Pro is available
   
   ModelId:
@@ -285,9 +181,7 @@ Parameters:
     Default: ""
     AllowedPattern: ^$|^[a-zA-Z0-9][a-zA-Z0-9._%+-]{0,63}@[a-zA-Z0-9][a-zA-Z0-9.-]{0,62}\.[a-zA-Z]{2,6}$
     ConstraintDescription: Must be a valid email address (user@domain.com) or empty string
-  
 
-  
   # Tagging Parameters for Resource Management
   Environment:
     Type: String
@@ -359,212 +253,24 @@ Parameters:
     AllowedValues: ["true", "false"]
     ConstraintDescription: Must be either "true" or "false"
 
-
 Conditions:
-  # Condition to check if AlarmEmail parameter is provided
   HasAlarmEmail:
     Fn::Not:
       - Fn::Equals:
           - Ref: AlarmEmail
           - ""
   
-  # NOTE: User and application tracking conditions are defined but not used in dashboard JSON
-  # due to CloudFormation limitations with conditional JSON array elements.
-  # The tracking parameters control the metadata field names used in log queries.
-  # When tracking is disabled or metadata is missing, widgets will show "No data".
-  # This provides a clean user experience without complex conditional dashboard logic.
-  
-  # Condition to check if user tracking is enabled (for future use)
   IsUserTrackingEnabled:
     Fn::Equals:
       - Ref: EnableUserTracking
       - "true"
   
-  # Condition to check if application tracking is enabled (for future use)  
   IsApplicationTrackingEnabled:
     Fn::Equals:
       - Ref: EnableApplicationTracking
       - "true"
 
-
 Resources:
-  # ========================================================================
-  # IAM Resources - Least-Privilege Security Model
-  # ========================================================================
-  #
-  # SECURITY DESIGN PRINCIPLES:
-  # - Least-privilege access: Only permissions required for dashboard viewing
-  # - Resource-scoped permissions: Limited to specific dashboard and Bedrock metrics
-  # - Conditional access: Region-scoped to prevent cross-region access
-  # - Separation of concerns: Separate policy and role for flexibility
-  #
-  # PERMISSION SCOPE:
-  # - CloudWatch: Dashboard access, Bedrock metrics only, specified region only
-  # - CloudWatch Logs: Bedrock model invocation logs only, specified region only  
-  # - Bedrock: Read-only model information, specified region only
-  # - No write permissions: Cannot modify dashboards, alarms, or configurations
-  #
-  # USAGE PATTERNS:
-  # - Assign DashboardViewerRole to users/groups needing dashboard access
-  # - Use for cross-account dashboard sharing (modify trust policy)
-  # - Integrate with identity providers via SAML/OIDC (modify trust policy)
-  #
-  # SECURITY CONSIDERATIONS:
-  # - Role assumes require explicit region matching
-  # - CloudWatch permissions scoped to Bedrock namespaces only
-  # - Log permissions scoped to Bedrock log groups only
-  # - No access to other AWS services or resources
-  #
-  # ========================================================================
-
-  # IAM Managed Policy for Dashboard Viewers (Read-Only Access)
-  DashboardViewerPolicy:
-    Type: AWS::IAM::ManagedPolicy
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      ManagedPolicyName:
-        Fn::Sub: '${DashboardName}-ViewerPolicy'
-      Description: 'Least-privilege policy for Nova Pro dashboard viewing'
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          # CloudWatch dashboard permissions - scoped to specific dashboard and monitoring region
-          - Effect: Allow
-            Action:
-              - cloudwatch:GetDashboard
-              - cloudwatch:ListDashboards
-            Resource: 
-              - Fn::Sub: 'arn:${AWS::Partition}:cloudwatch:${MonitoringRegion}:${AWS::AccountId}:dashboard/${DashboardName}'
-              - Fn::Sub: 'arn:${AWS::Partition}:cloudwatch:${MonitoringRegion}:${AWS::AccountId}:dashboard/*'
-            Condition:
-              StringEquals:
-                # SECURITY: Enforce region scoping for dashboard operations
-                'aws:RequestedRegion': !Ref MonitoringRegion
-          # CloudWatch metrics permissions - scoped to Bedrock namespace and monitoring region only
-          - Effect: Allow
-            Action:
-              - cloudwatch:GetMetricData
-              - cloudwatch:GetMetricStatistics
-              - cloudwatch:ListMetrics
-            Resource: '*'
-            Condition:
-              StringEquals:
-                'cloudwatch:namespace': 
-                  - 'AWS/Bedrock'
-                  - 'AWS/Bedrock/Guardrails'
-                # SECURITY: Enforce region scoping for all CloudWatch metric operations
-                'aws:RequestedRegion': !Ref MonitoringRegion
-          # CloudWatch Logs permissions for log insights widgets - scoped to specific model logs only
-          - Effect: Allow
-            Action:
-              - logs:StartQuery
-              - logs:GetQueryResults
-              - logs:StopQuery
-              - logs:DescribeLogGroups
-              - logs:DescribeLogStreams
-              - logs:FilterLogEvents
-            Resource: 
-              # SECURITY: Scope to specific model logs to prevent access to other models' logs
-              - Fn::Sub: 'arn:${AWS::Partition}:logs:${MonitoringRegion}:${AWS::AccountId}:log-group:/aws/bedrock/modelinvocations/${ModelId}*'
-              - Fn::Sub: 'arn:${AWS::Partition}:logs:${MonitoringRegion}:${AWS::AccountId}:log-group:/aws/bedrock/modelinvocations/${ModelId}:*'
-            Condition:
-              StringEquals:
-                'aws:RequestedRegion': !Ref MonitoringRegion
-          # Bedrock read-only permissions for model information - minimal required permissions
-          - Effect: Allow
-            Action:
-              - bedrock:GetModelInvocationLoggingConfiguration
-              - bedrock:ListFoundationModels
-            Resource: '*'
-            Condition:
-              StringEquals:
-                'aws:RequestedRegion': !Ref MonitoringRegion
-
-  # IAM Role for Dashboard Viewers (Read-Only Access)
-  DashboardViewerRole:
-    Type: AWS::IAM::Role
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Properties:
-      RoleName:
-        Fn::Sub: '${DashboardName}-ViewerRole'
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              AWS:
-                # SECURITY: Restrict to specific users/roles instead of account root
-                # Replace these with actual user/role ARNs in production
-                - Fn::Sub: 'arn:${AWS::Partition}:iam::${AWS::AccountId}:user/dashboard-admin'
-                - Fn::Sub: 'arn:${AWS::Partition}:iam::${AWS::AccountId}:role/MonitoringTeamRole'
-            Action: sts:AssumeRole
-            Condition:
-              StringEquals:
-                'aws:RequestedRegion': !Ref MonitoringRegion
-                # SECURITY: Add ExternalId for cross-account access security
-                'sts:ExternalId': !Sub '${DashboardName}-${AWS::AccountId}'
-              # SECURITY: Add time-based access restrictions
-              DateGreaterThan:
-                'aws:CurrentTime': '2025-01-01T00:00:00Z'
-              DateLessThan:
-                'aws:CurrentTime': '2026-12-31T23:59:59Z'
-              # SECURITY: Add source IP restrictions (uncomment and customize for production)
-              # IpAddress:
-              #   'aws:SourceIp': 
-              #     - '203.0.113.0/24'  # Replace with your organization's IP ranges
-              #     - '198.51.100.0/24'
-      # Reference the managed policy for dashboard access
-      ManagedPolicyArns:
-        - !Ref DashboardViewerPolicy
-
-      Tags:
-        - Key: Environment
-          Value: !Ref Environment
-        - Key: Owner
-          Value: !Ref Owner
-        - Key: CostCenter
-          Value: !Ref CostCenter
-        - Key: Purpose
-          Value: NovaProMonitoring
-
-  # ========================================================================
-  # SNS Resources - Alarm Notification System
-  # ========================================================================
-  #
-  # NOTIFICATION DESIGN:
-  # - Conditional creation: Only created if AlarmEmail parameter provided
-  # - KMS encryption: Uses AWS managed key (alias/aws/sns) for security
-  # - Email subscription: Automatic subscription to provided email address
-  # - Extensible: Additional subscriptions can be added post-deployment
-  #
-  # OPERATIONAL CONSIDERATIONS:
-  # - Email confirmation required: Subscriber must confirm subscription
-  # - Delivery retries: SNS handles automatic retry logic
-  # - Dead letter queues: Consider adding for production environments
-  # - Message filtering: Can be added to reduce notification noise
-  #
-  # INTEGRATION OPTIONS:
-  # - PagerDuty: Add HTTPS subscription to PagerDuty integration URL
-  # - Slack: Use AWS Chatbot or Lambda function for Slack integration
-  # - Microsoft Teams: Use Logic Apps or Lambda function integration
-  # - Custom webhooks: Add HTTPS subscriptions to custom endpoints
-  #
-  # COST CONSIDERATIONS:
-  # - SNS requests: $0.50 per 1 million requests (alarm notifications only)
-  # - Email delivery: $2.00 per 100,000 emails (typically negligible)
-  # - SMS delivery: $0.75 per 100 SMS messages (if SMS subscriptions added)
-  #
-  # SECURITY FEATURES:
-  # - KMS encryption at rest and in transit
-  # - IAM-based access control for topic management
-  # - VPC endpoint support for private network access
-  #
-  # ========================================================================
-
-  # SNS Topic for Alarm Notifications
-  # Created only if AlarmEmail parameter is provided
   AlarmTopic:
     Type: AWS::SNS::Topic
     Condition: HasAlarmEmail
@@ -574,7 +280,6 @@ Resources:
       DisplayName: Nova Pro Model Alarms
       TopicName:
         Fn::Sub: '${DashboardName}-AlarmTopic'
-      # Enable KMS encryption for SNS topic to protect notification content
       KmsMasterKeyId: alias/aws/sns
       Tags:
         - Key: Environment
@@ -588,7 +293,6 @@ Resources:
         - Key: Component
           Value: AlarmNotification
 
-  # SNS Topic Access Policy - Restrict publishing to CloudWatch service only
   AlarmTopicPolicy:
     Type: AWS::SNS::TopicPolicy
     Condition: HasAlarmEmail
@@ -600,7 +304,6 @@ Resources:
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
-          # Allow CloudWatch service to publish alarm notifications
           - Sid: AllowCloudWatchAlarmsToPublish
             Effect: Allow
             Principal:
@@ -610,28 +313,18 @@ Resources:
             Condition:
               StringEquals:
                 'aws:SourceAccount': !Ref 'AWS::AccountId'
-          # Deny all non-TLS connections for security
           - Sid: DenyInsecureConnections
-            Effect: Deny
-            Principal: '*'
-            Action: '*'
-            Resource: !Ref AlarmTopic
-            Condition:
-              Bool:
-                'aws:SecureTransport': 'false'
-          # Deny unauthorized publishing (only CloudWatch allowed)
-          - Sid: DenyUnauthorizedPublishing
             Effect: Deny
             Principal: '*'
             Action: 
               - sns:Publish
+              - sns:Subscribe
             Resource: !Ref AlarmTopic
             Condition:
-              StringNotEquals:
-                'aws:PrincipalServiceName': 'cloudwatch.amazonaws.com'
+              Bool:
+                'aws:SecureTransport': 'false'
   
   # SNS Email Subscription
-  # Subscribes the provided email address to the alarm topic
   AlarmSubscription:
     Type: AWS::SNS::Subscription
     Condition: HasAlarmEmail
@@ -642,77 +335,6 @@ Resources:
       TopicArn:
         Ref: AlarmTopic
   
-  # ========================================================================
-  # CloudWatch Dashboard - Main Monitoring Interface
-  # ========================================================================
-  #
-  # DASHBOARD LAYOUT (24-column grid system):
-  # 
-  # Row 1 (y:0-5): Usage Overview
-  #   - Total Invocations (24h) | Requests/Min (6h) | Service TPM (6h)
-  #   - Positions: x:0-7, x:8-15, x:16-23
-  #
-  # Row 2 (y:6-11): Customer TPM & Cost Tracking  
-  #   - Customer TPM (6h) | Daily Cost | Cost/Request (7d)
-  #   - Positions: x:0-7, x:8-15, x:16-23
-  #
-  # Row 3 (y:12-17): Cost Analysis & Performance
-  #   - Token Cost Breakdown (30d) | Cache Efficiency (7d) | Latency Percentiles (6h)
-  #   - Positions: x:0-7, x:8-15, x:16-23
-  #
-  # Row 4 (y:18-23): Latency Analysis & Error Monitoring
-  #   - Current/Previous Hour Latency | Latency by Size (24h) | Error Rate Gauge
-  #   - Positions: x:0-3, x:4-7, x:8-15, x:16-23
-  #
-  # Row 5 (y:24-29): Error Details & Success Metrics
-  #   - Error Breakdown (24h) | Recent Error Logs | Success vs Failed (24h)
-  #   - Positions: x:0-7, x:8-15, x:16-23
-  #
-  # Row 6 (y:30-35): Token Distribution & Concurrency
-  #   - Token Distribution (7d) | Concurrent Invocations (6h)
-  #   - Positions: x:0-11, x:12-23
-  #
-  # Row 7 (y:36-41): Guardrails Monitoring
-  #   - Total Interventions (24h) | Intervention Rate (7d) | Interventions by Type (24h)
-  #   - Positions: x:0-7, x:8-15, x:16-23
-  #
-  # Row 8 (y:42-47): User Analytics (Conditional - only if EnableUserTracking=true)
-  #   - Top Users by Invocations | User Cost Distribution | User Token Consumption
-  #   - Positions: x:0-7, x:8-15, x:16-23
-  #
-  # Row 9 (y:48-53): Application Analytics (Conditional - only if EnableApplicationTracking=true)
-  #   - Top Applications by Invocations | Application Cost Distribution | Application Usage Trends
-  #   - Positions: x:0-7, x:8-15, x:16-23
-  #
-  # Row 10 (y:54-59): Cost Allocation Summary (Conditional - if either tracking enabled)
-  #   - Unknown Usage % | Cost Allocation Coverage % | Report Generation Instructions
-  #   - Positions: x:0-7, x:8-15, x:16-23
-  #
-  # COST CALCULATIONS (Nova Pro pricing as of December 2025):
-  # - Input tokens: $0.0008 per 1,000 tokens
-  # - Cache write tokens: $0.0008 per 1,000 tokens  
-  # - Cache read tokens: $0.00008 per 1,000 tokens (90% discount from input)
-  # - Output tokens: $0.0032 per 1,000 tokens (4x input token cost)
-  #
-  # TPM CALCULATIONS:
-  # - Service TPM (quota): (Input + CacheWrite + (Output × 5)) / period × 60
-  #   * Used by Bedrock service for quota enforcement
-  #   * Output tokens weighted 5x per service team calculation
-  # - Customer TPM (traditional): (Input + Output) / period × 60
-  #   * Traditional calculation for customer monitoring
-  #   * Simpler calculation for understanding consumption
-  #
-  # CONDITIONAL WIDGET IMPLEMENTATION:
-  # CloudFormation doesn't support conditional JSON array elements natively, so all
-  # user and application tracking widgets are included in the dashboard. The tracking
-  # behavior is controlled by:
-  # 1. EnableUserTracking/EnableApplicationTracking parameters control metadata field names
-  # 2. When tracking is disabled, log queries will find no matching metadata
-  # 3. Widgets will display "No data" gracefully when no results are found
-  # 4. This provides clean UX without complex conditional dashboard JSON logic
-  # 
-  # Users can customize the dashboard post-deployment to remove unwanted widgets if needed.
-  #
   NovaProDashboard:
     Type: AWS::CloudWatch::Dashboard
     DeletionPolicy: Retain
@@ -1518,34 +1140,6 @@ Resources:
           ]
           }
 
-  # ========================================================================
-  # CloudWatch Alarms - Operational Alerting
-  # ========================================================================
-  #
-  # ALARM CONFIGURATION STRATEGY:
-  # - Use "M out of N" evaluation periods to reduce false positives
-  # - TreatMissingData: notBreaching (don't alarm on missing metrics)
-  # - InsufficientDataActions: [] (don't alarm on insufficient data)
-  # - Conditional SNS integration (only if AlarmEmail provided)
-  #
-  # ALARM THRESHOLDS (configurable via parameters):
-  # - Error Rate: Default 5% (2 out of 2 periods of 5 minutes)
-  # - P99 Latency: Default 5000ms (3 out of 3 periods of 5 minutes)  
-  # - Daily Cost: Default $1000 (1 period of 24 hours)
-  # - Throttling Rate: Default 10% (2 out of 2 periods of 5 minutes)
-  #
-  # NOTIFICATION STRATEGY:
-  # - Email notifications via SNS (if AlarmEmail parameter provided)
-  # - Alarm state changes tracked for operational visibility
-  # - Consider integrating with PagerDuty, Slack, or other tools via SNS
-  #
-  # COST IMPACT:
-  # - Standard alarms: $0.10/month each (4 alarms = $0.40/month)
-  # - High-resolution alarms: $0.30/month each (not used in this template)
-  #
-  # ========================================================================
-  
-  # High Error Rate Alarm - triggers when error rate exceeds threshold
   HighErrorRateAlarm:
     Type: AWS::CloudWatch::Alarm
     DeletionPolicy: Retain
@@ -1575,7 +1169,6 @@ Resources:
       Threshold:
         Ref: ErrorRateThreshold
       ComparisonOperator: GreaterThanThreshold
-      # Calculate error rate as percentage using metrics math
       Metrics:
         - Id: m1
           MetricStat:
@@ -1623,12 +1216,9 @@ Resources:
           - - Ref: AlarmTopic
           - []
       TreatMissingData: notBreaching
-      # Enable alarm state change tracking for operational visibility
       ActionsEnabled: true
-      # Insufficient data actions - don't alarm on missing data
       InsufficientDataActions: []
 
-  # High P99 Latency Alarm - triggers when P99 latency exceeds threshold
   HighP99LatencyAlarm:
     Type: AWS::CloudWatch::Alarm
     DeletionPolicy: Retain
@@ -1669,7 +1259,6 @@ Resources:
       TreatMissingData: notBreaching
       InsufficientDataActions: []
 
-  # Daily Cost Limit Alarm - triggers when estimated daily cost exceeds threshold
   DailyCostLimitAlarm:
     Type: AWS::CloudWatch::Alarm
     DeletionPolicy: Retain
@@ -1756,7 +1345,6 @@ Resources:
       TreatMissingData: notBreaching
       InsufficientDataActions: []
 
-  # High Throttling Rate Alarm - triggers when throttling rate exceeds threshold
   HighThrottlingRateAlarm:
     Type: AWS::CloudWatch::Alarm
     DeletionPolicy: Retain
@@ -1781,7 +1369,6 @@ Resources:
       Threshold:
         Ref: ThrottleRateThreshold
       ComparisonOperator: GreaterThanThreshold
-      # Calculate throttling rate as percentage using metrics math
       Metrics:
         - Id: m1
           MetricStat:
@@ -1818,32 +1405,6 @@ Resources:
           - []
       TreatMissingData: notBreaching
       InsufficientDataActions: []
-
-# ============================================================================
-# Stack Outputs - Integration Points and Operational Information
-# ============================================================================
-#
-# OUTPUT USAGE:
-# - DashboardURL: Direct link to dashboard (bookmark for quick access)
-# - DashboardName: Reference for API calls and automation scripts
-# - AlarmTopicArn: SNS topic ARN for additional subscriptions
-# - DashboardViewerRoleArn: IAM role for cross-account or federated access
-# - StackManagementCommands: Copy-paste commands for stack operations
-# - SecurityRecommendations: Security checklist for production deployment
-# - ProductionDeploymentNotes: Operational considerations for production
-#
-# CROSS-STACK REFERENCES:
-# All outputs are exported with stack name prefix for cross-stack imports:
-# - !ImportValue StackName-DashboardURL
-# - !ImportValue StackName-DashboardName  
-# - !ImportValue StackName-AlarmTopicArn
-# - !ImportValue StackName-ViewerRoleArn
-#
-# AUTOMATION INTEGRATION:
-# Use outputs in CI/CD pipelines, monitoring scripts, and operational runbooks.
-# Example: Retrieve dashboard URL programmatically for embedding in portals.
-#
-# ============================================================================
 
 Outputs:
   DashboardURL:
@@ -1893,33 +1454,33 @@ Outputs:
         # Stack Policy (apply during deployment)
         aws cloudformation set-stack-policy --stack-name ${AWS::StackName} --stack-policy-body file://stack-policy.json --region ${MonitoringRegion}
         
-        # Rollback Configuration (recommended for production)
         aws cloudformation create-stack --stack-name ${AWS::StackName} \
           --template-body file://nova-pro-dashboard-template.yaml \
           --rollback-configuration RollbackTriggers='[{Arn=arn:aws:cloudwatch:${MonitoringRegion}:${AWS::AccountId}:alarm:${DashboardName}-HighErrorRate,Type=AWS::CloudWatch::Alarm},{Arn=arn:aws:cloudwatch:${MonitoringRegion}:${AWS::AccountId}:alarm:${DashboardName}-HighP99Latency,Type=AWS::CloudWatch::Alarm}]',MonitoringTimeInMinutes=5 \
           --enable-termination-protection \
           --region ${MonitoringRegion}
         
-        # Enable Termination Protection (for existing stacks)
         aws cloudformation update-termination-protection --stack-name ${AWS::StackName} --enable-termination-protection --region ${MonitoringRegion}
   
-  DashboardViewerRoleArn:
+  RequiredIAMPermissions:
     Description: >
-      ARN of the IAM role for dashboard viewers (read-only access).
-      Assign this role to users/groups needing dashboard access.
-      For cross-account access, modify the trust policy to include external account principals.
-      Example: aws sts assume-role --role-arn VALUE --role-session-name DashboardViewer
-    Value:
-      Fn::GetAtt: DashboardViewerRole.Arn
-    Export:
-      Name:
-        Fn::Sub: '${AWS::StackName}-ViewerRoleArn'
+      IAM permissions required for dashboard access.
+      Add these permissions to your existing IAM role to view the dashboard.
+      See CUSTOMER_IAM_REQUIREMENTS.md for detailed policy document.
+    Value: |
+      Required Actions:
+      - cloudwatch:GetDashboard, cloudwatch:ListDashboards
+      - cloudwatch:GetMetricData, cloudwatch:GetMetricStatistics, cloudwatch:ListMetrics  
+      - logs:StartQuery, logs:GetQueryResults, logs:StopQuery, logs:DescribeLogGroups
+      - bedrock:GetModelInvocationLoggingConfiguration, bedrock:ListFoundationModels
+      
+      See CUSTOMER_IAM_REQUIREMENTS.md for complete policy JSON.
   
   SecurityRecommendations:
     Description: Security best practices for this monitoring stack
     Value: |
       SECURITY CHECKLIST:
-      1. Use the DashboardViewerRole for read-only dashboard access
+      1. Add required IAM permissions to your existing role (see CUSTOMER_IAM_REQUIREMENTS.md)
       2. Regularly rotate SNS topic access if using programmatic access
       3. Monitor CloudTrail for unauthorized dashboard modifications
       4. Enable AWS Config to track resource configuration changes
@@ -1936,7 +1497,7 @@ Outputs:
       3. Test alarm notifications in non-production environment first
       4. Monitor CloudWatch costs - dashboards cost $3/month, alarms $0.10/month each
       5. Verify Bedrock model invocation logging is enabled for error log analysis
-      6. Use the DashboardViewerRole for least-privilege dashboard access
+      6. Add required IAM permissions to your existing role (see CUSTOMER_IAM_REQUIREMENTS.md)
       
       BACKUP AND RECOVERY:
       7. Export dashboard configuration: aws cloudwatch get-dashboard --dashboard-name VALUE
@@ -1971,5 +1532,3 @@ Outputs:
         --region ${MonitoringRegion}
       
       # Schedule weekly drift detection (add to cron)
-      # 0 2 * * 1 /path/to/drift-check.sh ${AWS::StackName} ${MonitoringRegion}
-

@@ -1,288 +1,213 @@
-# Contributing to Nova Pro CloudWatch Dashboard
+# Contributing to Nova Pro Dashboard
 
-Thank you for your interest in contributing to the Nova Pro CloudWatch Dashboard project!
+Thank you for your interest in contributing to the Nova Pro Dashboard project! We welcome contributions from the community.
 
-> **Note**: This is a personal open-source project maintained in my spare time. While I welcome contributions, please be patient with response times on issues and pull requests.
+## 🤝 How to Contribute
 
-This document provides guidelines and information for contributors.
+### Reporting Issues
+- **Search existing issues** before creating new ones
+- **Use issue templates** when available
+- **Provide detailed information** including error messages, steps to reproduce, and environment details
+- **Include CloudFormation events** and relevant logs
 
-## 🚀 Getting Started
+### Suggesting Features
+- **Check existing feature requests** first
+- **Describe the use case** and business value
+- **Provide implementation ideas** if you have them
+- **Consider backward compatibility**
+
+### Code Contributions
+1. **Fork the repository**
+2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)
+3. **Make your changes**
+4. **Test thoroughly** (see Testing section)
+5. **Commit with clear messages**
+6. **Push to your branch** (`git push origin feature/amazing-feature`)
+7. **Open a Pull Request**
+
+## 🧪 Testing
+
+### Template Validation
+```bash
+# Validate CloudFormation template
+python3 scripts/validate-template.py nova-pro-dashboard-compact.yaml
+
+# Test deployment (use test account)
+aws cloudformation create-stack \
+  --stack-name test-nova-dashboard \
+  --template-body file://nova-pro-dashboard-compact.yaml \
+  --parameters file://examples/parameters.example.json
+```
+
+### Documentation Testing
+- **Test all commands** in documentation
+- **Verify links** work correctly
+- **Check formatting** in different viewers
+- **Validate JSON/YAML** syntax
+
+### Manual Testing Checklist
+- [ ] Template deploys successfully
+- [ ] Dashboard loads without errors
+- [ ] All widgets display data (after enabling logging)
+- [ ] Alarms are created and functional
+- [ ] SNS notifications work (if configured)
+- [ ] IAM permissions are minimal and functional
+- [ ] Documentation is accurate and complete
+
+## 📝 Code Standards
+
+### CloudFormation Templates
+- **Use consistent indentation** (2 spaces)
+- **Add descriptive comments** for complex logic
+- **Follow AWS naming conventions**
+- **Include proper metadata** and descriptions
+- **Use parameters** for configurable values
+- **Add appropriate tags** to all resources
+
+### Documentation
+- **Use clear, concise language**
+- **Include code examples** where helpful
+- **Follow markdown best practices**
+- **Keep README up to date**
+- **Add troubleshooting info** for common issues
+
+### Scripts
+- **Include error handling** (`set -euo pipefail` for bash)
+- **Add help text** and usage examples
+- **Use consistent formatting**
+- **Test on multiple platforms** when possible
+
+## 🏗️ Development Setup
 
 ### Prerequisites
+- AWS CLI configured
+- Python 3.7+ (for validation scripts)
+- Access to AWS account for testing
+- Text editor with YAML/JSON support
 
-- AWS CLI configured with appropriate permissions
-- Python 3.8+ for running tests
-- `cfn-lint` for CloudFormation template validation
-- Git for version control
-
-### Development Setup
-
-1. Fork the repository
-2. Clone your fork:
-   ```bash
-   git clone https://github.com/YOUR_USERNAME/nova-pro-cloudwatch-dashboard.git
-   cd nova-pro-cloudwatch-dashboard
-   ```
-3. Install development dependencies:
-   ```bash
-   pip install cfn-lint hypothesis pytest
-   ```
-
-## 🔧 Development Workflow
-
-### Branch Naming Convention
-
-- `feature/description` - New features
-- `fix/description` - Bug fixes
-- `docs/description` - Documentation updates
-- `test/description` - Test improvements
-- `security/description` - Security enhancements
-
-### Making Changes
-
-1. Create a feature branch:
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
-
-2. Make your changes following our coding standards
-
-3. Run tests to ensure everything works:
-   ```bash
-   python test_template_properties.py
-   cfn-lint nova-pro-dashboard-template.yaml
-   ```
-
-4. Commit your changes with clear messages:
-   ```bash
-   git commit -m "feat: add new dashboard widget for cache metrics
-   
-   - Add cache hit rate visualization
-   - Include cache efficiency calculations
-   - Update cost tracking to include cache savings"
-   ```
-
-## 📋 Contribution Guidelines
-
-### CloudFormation Template Changes
-
-- **Always validate**: Run `cfn-lint` before committing
-- **Test thoroughly**: Ensure property-based tests pass
-- **Document pricing**: Update cost calculations with current pricing dates
-- **Security first**: Follow least-privilege IAM principles
-- **Update-safe**: Avoid properties that force resource replacement
-
-### Code Quality Standards
-
-- **Property-based testing**: Add tests for new correctness properties
-- **Documentation**: Update inline comments for complex logic
-- **Parameterization**: Balance flexibility with simplicity
-- **Resource protection**: Add `DeletionPolicy: Retain` for critical resources
-
-### Commit Message Format
-
-Follow conventional commits:
-
-```
-<type>(<scope>): <description>
-
-[optional body]
-
-[optional footer(s)]
-```
-
-Types:
-- `feat`: New feature
-- `fix`: Bug fix
-- `docs`: Documentation changes
-- `test`: Test additions/modifications
-- `refactor`: Code refactoring
-- `security`: Security improvements
-- `perf`: Performance improvements
-
-Examples:
+### Local Development
 ```bash
-feat(dashboard): add guardrail intervention widgets
-fix(alarms): correct P99 latency threshold calculation
-docs(readme): update deployment instructions
-test(properties): add region consistency validation
-security(iam): scope CloudWatch permissions to Bedrock namespace
+# Clone the repository
+git clone https://github.com/your-org/nova-pro-dashboard.git
+cd nova-pro-dashboard
+
+# Make scripts executable
+chmod +x scripts/*.sh
+
+# Validate template
+python3 scripts/validate-template.py nova-pro-dashboard-compact.yaml
 ```
 
-## 🧪 Testing Requirements
+### Testing Environment
+- **Use a dedicated test AWS account** or sandbox
+- **Clean up resources** after testing
+- **Test in multiple regions** if making region-specific changes
+- **Verify cost implications** of changes
 
-### Required Tests
-
-All contributions must include appropriate tests:
-
-1. **Property-based tests** for universal correctness properties
-2. **Template validation** using `cfn-lint`
-3. **AWS validation** using `aws cloudformation validate-template`
-
-### Running Tests
-
-```bash
-# Run all property-based tests
-python test_template_properties.py
-
-# Validate CloudFormation template
-cfn-lint nova-pro-dashboard-template.yaml
-
-# AWS template validation (requires AWS CLI configured)
-aws cloudformation validate-template --template-body file://nova-pro-dashboard-template.yaml
-```
-
-### Test Coverage
-
-New features should include:
-- Unit tests for parsing functions
-- Property tests for correctness properties
-- Integration tests for AWS resource creation (if applicable)
-
-## 📚 Documentation Standards
-
-### Inline Documentation
-
-- **YAML comments**: Explain complex CloudFormation logic
-- **Pricing updates**: Include dates for cost calculations
-- **Security notes**: Document IAM permissions and constraints
-- **Operational notes**: Include deployment and maintenance guidance
-
-### External Documentation
-
-- Update `README.md` for user-facing changes
-- Update `DEPLOYMENT.md` for operational changes
-- Update design documents for architectural changes
-
-## 🔒 Security Guidelines
-
-### Security Review Checklist
-
-- [ ] IAM policies follow least-privilege principle
-- [ ] No hardcoded credentials or sensitive data
-- [ ] Resource-scoped permissions where possible
-- [ ] Proper encryption for data in transit and at rest
-- [ ] Input validation for all parameters
-
-### Security-Sensitive Changes
-
-Changes affecting security require:
-1. Detailed security impact analysis
-2. Review by security-focused maintainers
-3. Testing of security controls
-4. Documentation of security implications
-
-## 📝 Pull Request Process
+## 📋 Pull Request Guidelines
 
 ### Before Submitting
+- [ ] **Test your changes** thoroughly
+- [ ] **Update documentation** if needed
+- [ ] **Add/update examples** if applicable
+- [ ] **Check for breaking changes**
+- [ ] **Validate all templates** and scripts
+- [ ] **Review your own code** for issues
 
-1. **Rebase** your branch on the latest main:
-   ```bash
-   git fetch origin
-   git rebase origin/main
-   ```
-
-2. **Run all tests** and ensure they pass
-
-3. **Update documentation** as needed
-
-4. **Self-review** your changes
-
-### Pull Request Template
-
-```markdown
-## Description
-Brief description of changes
-
-## Type of Change
-- [ ] Bug fix
-- [ ] New feature
-- [ ] Documentation update
-- [ ] Security enhancement
-- [ ] Performance improvement
-
-## Testing
-- [ ] Property-based tests pass
-- [ ] CloudFormation template validates
-- [ ] Manual testing completed (if applicable)
-
-## Security Impact
-Describe any security implications
-
-## Documentation
-- [ ] README updated
-- [ ] Inline comments added
-- [ ] Design docs updated (if needed)
-
-## Checklist
-- [ ] Code follows project conventions
-- [ ] Self-review completed
-- [ ] Tests added/updated
-- [ ] Documentation updated
-```
+### PR Description
+Include:
+- **Summary of changes**
+- **Motivation and context**
+- **Testing performed**
+- **Breaking changes** (if any)
+- **Related issues** (if any)
 
 ### Review Process
+1. **Automated checks** will run
+2. **Maintainer review** for code quality and design
+3. **Community feedback** period
+4. **Final approval** and merge
 
-1. **Automated checks**: CI/CD pipeline runs tests
-2. **Peer review**: At least one maintainer review required
-3. **Security review**: Required for security-sensitive changes
-4. **Final approval**: Maintainer approval required for merge
+## 🔄 Release Process
 
-## 🏷️ Issue Guidelines
+### Versioning
+We use [Semantic Versioning](https://semver.org/):
+- **MAJOR**: Breaking changes
+- **MINOR**: New features (backward compatible)
+- **PATCH**: Bug fixes (backward compatible)
 
-### Bug Reports
+### Release Checklist
+- [ ] Update version numbers
+- [ ] Update CHANGELOG.md
+- [ ] Test in multiple regions
+- [ ] Update documentation
+- [ ] Create release notes
+- [ ] Tag release
 
-Include:
-- CloudFormation template version
-- AWS region and account details (sanitized)
-- Steps to reproduce
-- Expected vs actual behavior
-- Error messages and logs
-- Environment details
+## 🛡️ Security
 
-### Feature Requests
+### Reporting Security Issues
+- **Do not** create public issues for security vulnerabilities
+- **Email** security concerns to [security@yourorg.com]
+- **Include** detailed information about the vulnerability
+- **Allow time** for investigation and fix before disclosure
 
-Include:
-- Use case description
-- Proposed solution
-- Alternative solutions considered
-- Impact on existing functionality
-- Implementation complexity estimate
+### Security Best Practices
+- **Follow least privilege** principle
+- **Avoid hardcoded credentials** or sensitive data
+- **Use secure defaults** in templates
+- **Document security implications** of changes
+- **Test IAM policies** thoroughly
 
-### Security Issues
+## 📚 Resources
 
-**Do not** create public issues for security vulnerabilities. Instead:
-1. Open a private security advisory on GitHub
-2. Provide detailed vulnerability description
-3. Include proof of concept (if safe)
-4. Allow time for responsible disclosure
+### AWS Documentation
+- [CloudFormation User Guide](https://docs.aws.amazon.com/cloudformation/)
+- [CloudWatch User Guide](https://docs.aws.amazon.com/cloudwatch/)
+- [Bedrock User Guide](https://docs.aws.amazon.com/bedrock/)
+- [IAM User Guide](https://docs.aws.amazon.com/iam/)
 
-## 🤝 Community Guidelines
+### Tools
+- [CloudFormation Linter](https://github.com/aws-cloudformation/cfn-lint)
+- [AWS CLI](https://aws.amazon.com/cli/)
+- [IAM Policy Simulator](https://policysim.aws.amazon.com/)
+
+### Community
+- [AWS CloudFormation GitHub](https://github.com/aws-cloudformation)
+- [AWS Samples](https://github.com/aws-samples)
+- [AWS Community](https://aws.amazon.com/developer/community/)
+
+## 🏷️ Issue Labels
+
+We use these labels to categorize issues:
+- **bug**: Something isn't working
+- **enhancement**: New feature or request
+- **documentation**: Improvements or additions to docs
+- **good first issue**: Good for newcomers
+- **help wanted**: Extra attention is needed
+- **question**: Further information is requested
+- **security**: Security-related issue
+
+## 💬 Communication
 
 ### Code of Conduct
-
 Please read and follow our [Code of Conduct](CODE_OF_CONDUCT.md).
 
-- Be respectful and inclusive
-- Focus on constructive feedback
-- Help others learn and grow
-- Maintain professional communication
-
 ### Getting Help
+- **GitHub Discussions**: For questions and community help
+- **GitHub Issues**: For bugs and feature requests
+- **Documentation**: Check docs/ folder first
 
-- Check existing issues and documentation first
-- Ask questions in issue discussions
-- Provide context and details when asking for help
-- Be patient with response times
+### Stay Updated
+- **Watch** the repository for notifications
+- **Follow** releases for updates
+- **Join** community discussions
 
-## 🔄 Versioning
+## 🎉 Recognition
 
-We follow semantic versioning (SemVer):
-- `MAJOR.MINOR.PATCH`
-- Major: Breaking changes
-- Minor: New features (backward compatible)
-- Patch: Bug fixes (backward compatible)
+Contributors will be:
+- **Listed** in CONTRIBUTORS.md
+- **Mentioned** in release notes
+- **Thanked** in the community
 
----
-
-Thank you for contributing to Nova Pro CloudWatch Dashboard!
+Thank you for contributing to make Nova Pro monitoring better for everyone! 🚀
