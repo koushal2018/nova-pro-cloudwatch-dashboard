@@ -231,6 +231,6 @@ Use at your own risk. Always review CloudFormation templates before deploying to
 
 ---
 
-**Author**: Koushal Dalal
+**Author**: Koushal Dutt
 **Version**: 1.0.0 (December 2025)
 **Pricing Update**: December 2025 (Nova Pro pricing embedded in cost calculations)
