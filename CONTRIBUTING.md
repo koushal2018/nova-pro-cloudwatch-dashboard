@@ -148,7 +148,7 @@ We use [Semantic Versioning](https://semver.org/):
 
 ### Reporting Security Issues
 - **Do not** create public issues for security vulnerabilities
-- **Email** security concerns to [security@yourorg.com]
+- **Email** security concerns to the repository maintainers
 - **Include** detailed information about the vulnerability
 - **Allow time** for investigation and fix before disclosure
 

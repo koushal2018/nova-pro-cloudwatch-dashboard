@@ -1,0 +1,62 @@
+[
+  {
+    "ParameterKey": "DashboardName",
+    "ParameterValue": "BedrockCompleteDashboard-v3"
+  },
+  {
+    "ParameterKey": "MonitoringRegion",
+    "ParameterValue": "me-central-1"
+  },
+  {
+    "ParameterKey": "ModelId",
+    "ParameterValue": "amazon.nova-pro-v1:0"
+  },
+  {
+    "ParameterKey": "ErrorRateThreshold",
+    "ParameterValue": "5"
+  },
+  {
+    "ParameterKey": "P99LatencyThreshold",
+    "ParameterValue": "5000"
+  },
+  {
+    "ParameterKey": "DailyCostThreshold",
+    "ParameterValue": "1000"
+  },
+  {
+    "ParameterKey": "ThrottleRateThreshold",
+    "ParameterValue": "10"
+  },
+  {
+    "ParameterKey": "AlarmEmail",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "UserIdentityField",
+    "ParameterValue": "userId"
+  },
+  {
+    "ParameterKey": "ApplicationIdentityField",
+    "ParameterValue": "applicationName"
+  },
+  {
+    "ParameterKey": "EnableUserTracking",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "EnableApplicationTracking",
+    "ParameterValue": "true"
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "Owner",
+    "ParameterValue": "DevOps"
+  },
+  {
+    "ParameterKey": "CostCenter",
+    "ParameterValue": "AI-OPERATIONS"
+  }
+]

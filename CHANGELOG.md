@@ -65,6 +65,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Resource count: 34 resources (dashboard, alarms, SNS, policies)
 - Validation: 29+ automated checks for production readiness
 
+## [1.1.0] - 2025-12-15
+
+### Fixed
+- **CRITICAL**: Fixed cost calculation formulas that were dividing by 1000 twice
+- Corrected all pricing expressions from `(tokens * rate/1000)` to `(tokens/1000 * rate)`
+- Updated cost alarm calculations to use corrected formula
+- Fixed daily cost threshold alarm to prevent false positives
+
+### Added
+- Enhanced cost tracking with `RUNNING_SUM` for daily totals
+- Real-time cost tracking alongside daily cumulative costs
+
+### Enhanced
+- **Cost Widgets**: Improved layout with combined real-time and daily cost views
+- **Token Tracking**: Added daily token consumption totals
+- **User Analytics**: Enhanced cost calculation accuracy in log queries
+- **Documentation**: Updated pricing formulas throughout all widgets and queries
+
+### Changed
+- Cost calculation methodology now correctly applies Nova Pro pricing rates
+- Widget titles updated to indicate "Corrected Formula" where applicable
+- Improved widget annotations with clearer pricing information
+- Enhanced parameter organization with new "Inference Profile Tracking" group
+
+### Technical Details
+- Formula fix: `(m1 * 0.0008/1000)` → `(m1/1000 * 0.0008)`
+- Updated 8 existing widgets with corrected formulas
+- Simplified dashboard focus on core Nova Pro monitoring
+
 ## [Unreleased]
 
 ### Planned

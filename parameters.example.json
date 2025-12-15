@@ -1,0 +1,30 @@
+[
+  {
+    "ParameterKey": "MonitoringRegion",
+    "ParameterValue": "us-east-1"
+  },
+  {
+    "ParameterKey": "ModelId", 
+    "ParameterValue": "amazon.nova-pro-v1:0"
+  },
+  {
+    "ParameterKey": "DashboardName",
+    "ParameterValue": "NovaProMonitoring"
+  },
+  {
+    "ParameterKey": "AlarmEmail",
+    "ParameterValue": ""
+  },
+  {
+    "ParameterKey": "Environment",
+    "ParameterValue": "prod"
+  },
+  {
+    "ParameterKey": "Owner",
+    "ParameterValue": "DevOps"
+  },
+  {
+    "ParameterKey": "CostCenter",
+    "ParameterValue": "AI-OPERATIONS"
+  }
+]
